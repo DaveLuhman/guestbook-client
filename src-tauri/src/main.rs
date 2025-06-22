@@ -4,6 +4,7 @@ mod devices;
 mod hid;
 
 use devices::barcode::{listen_to_barcode, open_symbol_scanner};
+use devices::magtek::{listen_to_magtek, open_magtek_reader};
 
 #[tauri::command]
 fn get_hid_devices() -> Vec<String> {
@@ -32,11 +33,25 @@ fn start_barcode_listener(window: tauri::Window) -> Result<(), String> {
         None => Err("No compatible barcode scanner found.".into()),
     }
 }
+
+#[tauri::command]
+fn start_magtek_listener(window: tauri::Window) -> Result<(), String> {
+    let api = hidapi::HidApi::new().map_err(|e| e.to_string())?;
+
+    match open_magtek_reader(&api) {
+        Some(device) => {
+            listen_to_magtek(device, window);
+            Ok(())
+        }
+        None => Err("No compatible MagTek reader found.".into()),
+    }
+}
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             get_hid_devices,
             start_barcode_listener,
+            start_magtek_listener,
             // add other commands here as you implement them
         ])
         .run(tauri::generate_context!())
