@@ -1,6 +1,30 @@
 use hidapi::{HidApi, HidDevice};
+use regex::Regex;
+use serde::Serialize;
 use std::time::{Duration, Instant};
 use tauri::Window;
+
+#[derive(Serialize)]
+pub struct CardData {
+    pub id: String,
+    pub name: String,
+}
+
+fn parse_card_data(data: &str) -> Option<CardData> {
+    let data = data.trim();
+    let track1 = data.split('?').next().unwrap_or(data);
+    let parts: Vec<&str> = track1.split('^').collect();
+    if parts.len() >= 3 {
+        let name = parts[1].trim().to_string();
+        let after_name = parts[2];
+        let id_re = Regex::new(r"(\d{7})").unwrap();
+        if let Some(cap) = id_re.captures(after_name) {
+            let id = cap.get(1).unwrap().as_str().to_string();
+            return Some(CardData { id, name });
+        }
+    }
+    None
+}
 
 pub fn listen_to_magtek(device: HidDevice, window: Window) {
     std::thread::spawn(move || {
@@ -17,7 +41,11 @@ pub fn listen_to_magtek(device: HidDevice, window: Window) {
 
                     if now.duration_since(last_char_time) > Duration::from_millis(150) {
                         if !scan_buffer.is_empty() {
-                            window.emit("hid-data", scan_buffer.clone()).ok();
+                            if let Some(card) = parse_card_data(&scan_buffer) {
+                                window.emit("magtek-data", card).ok();
+                            } else {
+                                window.emit("hid-data", scan_buffer.clone()).ok();
+                            }
                             scan_buffer.clear();
                         }
                     }
@@ -27,7 +55,11 @@ pub fn listen_to_magtek(device: HidDevice, window: Window) {
 
                     if scan_buffer.contains('\n') || scan_buffer.contains('\r') {
                         let cleaned = scan_buffer.trim().to_string();
-                        window.emit("hid-data", cleaned.clone()).ok();
+                        if let Some(card) = parse_card_data(&cleaned) {
+                            window.emit("magtek-data", card).ok();
+                        } else {
+                            window.emit("hid-data", cleaned.clone()).ok();
+                        }
                         scan_buffer.clear();
                     }
                 }
