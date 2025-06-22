@@ -8,6 +8,10 @@ export async function startMagstripListener() {
     console.log("Card swipe:", event.payload);
   });
 
+  listen("magtek-data", event => {
+    console.log("MagTek parsed:", event.payload);
+  });
+
   listen("hid-error", event => {
     console.error("MagTek error:", event.payload);
   });
