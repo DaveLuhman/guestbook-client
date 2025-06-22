@@ -4,6 +4,11 @@ use serde::Serialize;
 use std::time::{Duration, Instant};
 use tauri::Window;
 
+lazy_static::lazy_static! {
+    static ref ID_RE: Regex = Regex::new(r"(\d{7})\s{3}").unwrap();
+    static ref NAME_RE: Regex = Regex::new(r"(?<=\^)(.*?)(?=\^)").unwrap();
+}
+
 #[derive(Serialize)]
 pub struct CardData {
     pub id: String,
@@ -11,19 +16,15 @@ pub struct CardData {
 }
 
 fn parse_card_data(data: &str) -> Option<CardData> {
-    let data = data.trim();
-    let track1 = data.split('?').next().unwrap_or(data);
-    let parts: Vec<&str> = track1.split('^').collect();
-    if parts.len() >= 3 {
-        let name = parts[1].trim().to_string();
-        let after_name = parts[2];
-        let id_re = Regex::new(r"(\d{7})").unwrap();
-        if let Some(cap) = id_re.captures(after_name) {
-            let id = cap.get(1).unwrap().as_str().to_string();
-            return Some(CardData { id, name });
-        }
-    }
-    None
+    let track1 = data.trim().split('?').next().unwrap_or(data);
+
+    let id_caps = ID_RE.captures(track1)?;
+    let name_caps = NAME_RE.captures(track1)?;
+
+    let id = id_caps.get(1)?.as_str().to_string();
+    let name = name_caps.get(1)?.trim().to_string();
+
+    Some(CardData { id, name })
 }
 
 pub fn listen_to_magtek(device: HidDevice, window: Window) {
@@ -87,4 +88,23 @@ pub fn open_magtek_reader(api: &HidApi) -> Option<HidDevice> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_valid_track() {
+        let data = "%B1234567   ^DOE/JOHN^1234567890123456?";
+        let card = parse_card_data(data).expect("Should parse");
+        assert_eq!(card.id, "1234567");
+        assert_eq!(card.name, "DOE/JOHN");
+    }
+
+    #[test]
+    fn parse_invalid_track() {
+        let data = "%B12^BAD^";
+        assert!(parse_card_data(data).is_none());
+    }
 }

@@ -31,6 +31,10 @@ import { listen } from "@tauri-apps/api/event";
     console.log("Scanned:", event.payload); // should be digits-only
   });
 
+  listen("magtek-data", event => {
+    console.log("MagTek card:", event.payload);
+  });
+
   listen("hid-error", event => {
     console.error("Scan error:", event.payload);
   });
