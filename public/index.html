@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Guestbook</title>
+  <link rel="stylesheet" type="text/css" href="styles.css">
+</head>
+
+<body>
+  <img src="img/icon-256.ico" alt="Icon" class="icon" id="logo-link" />
+  <h1>Guestbook</h1>
+  <div id="entry-data">
+    <p>Swipe your card, scan your barcode to record an entry...</p>
+  </div>
+  <div id="device-status">
+    <p id="swiper-status"></p>
+    <p id="scanner-status"></p>
+  </div>
+  <div id="swiper-hid-selector-parent" style="display: none;">
+    <p>Select A HID MSR from the list</p>
+    <select id="swiper-hid-selector"></select>
+    <button type="submit" id="submit-swiper-hid">Submit</button>
+    <button type="button" id="skip-swiper-hid">Skip</button>
+
+  </div>
+  <div id="barcode-hid-selector-parent" style="display: none;">
+    <p>Select A Barcode Scanner from the list</p>
+    <select id="barcode-hid-selector"></select>
+    <button type="submit" id="submit-barcode-hid">Submit</button>
+    <button type="button" id="skip-barcode-hid">Skip</button>
+
+  </div>
+  <script>
+    const { ipcRenderer } = require("electron");
+    ipcRenderer.send('renderer-ready');
+
+    // open viewer window on clicking logo
+    document.getElementById("logo-link").addEventListener("click", () => {
+      ipcRenderer.send("open-viewer-window");
+    });
+
+    // Handle successful entry
+    ipcRenderer.on("guest-entry", (event, data) => {
+      const entryData = document.getElementById("entry-data");
+      const body = document.body;
+
+      // Flash screen green
+      body.style.backgroundColor = "green";
+
+      // Display entry data
+      entryData.innerHTML = `
+        <p><strong>Name:</strong> ${data.name}</p>
+        <div class="entry-row">
+          <div class="entry-field">
+            <strong>Entry Time:</strong> <br />${new Date().toLocaleString()}
+          </div>
+        </div>
+        <p id="countdown">Clearing in 5 seconds...</p>
+      `;
+
+      // Countdown timer
+      let countdown = 5;
+      const countdownElement = document.getElementById("countdown");
+
+      const interval = setInterval(() => {
+        countdown--;
+        countdownElement.textContent = `Clearing in ${countdown} seconds...`;
+        if (countdown <= 0) {
+          clearInterval(interval);
+          resetScreen();
+        }
+      }, 1000);
+    });
+
+    // Handle error (e.g., misswipe or scan error)
+    ipcRenderer.on("entry-error", (event, errorMessage) => {
+      const entryData = document.getElementById("entry-data");
+      const body = document.body;
+
+      // Flash screen red
+      body.style.backgroundColor = "red";
+
+      // Display error message
+      entryData.innerHTML = `<p><strong>Error:</strong> ${errorMessage}</p>
+                             <p id="countdown">Clearing in 5 seconds...</p>`;
+
+      // Countdown timer for error message
+      let countdown = 5;
+      const countdownElement = document.getElementById("countdown");
+
+      const interval = setInterval(() => {
+        countdown--;
+        countdownElement.textContent = `Clearing in ${countdown} seconds...`;
+        if (countdown <= 0) {
+          clearInterval(interval);
+          resetScreen();
+        }
+      }, 1000);
+    });
+
+    // Handle barcode scanner status
+    ipcRenderer.on("scanner-status", (event, status) => {
+      document.getElementById("scanner-status").textContent = `Barcode Scanner: ${status}`;
+    });
+
+    function resetScreen() {
+      const entryData = document.getElementById("entry-data");
+      const body = document.body;
+
+      // Reset background color and entry data
+      body.style.backgroundColor = "#00447C";
+      entryData.innerHTML = `<p>Swipe your card, scan your barcode, or press the button to sign the guestbook...</p>`;
+    }
+
+    ipcRenderer.on('select-swiper-hid', (event, data) => {
+      console.log('Received select-swiper-hid event with data:', data);
+      const hidSelectorOptions = data.map(option => `<option value="${option.path}">${option.manufacturer} ${option.product}</option>`);
+      document.getElementById("swiper-hid-selector").innerHTML = hidSelectorOptions.join('\n');
+      document.getElementById("logo-link").style.display = "none";
+      document.getElementById("swiper-hid-selector-parent").style.display = "block";
+    });
+
+    ipcRenderer.on('select-barcode-hid', (event, data) => {
+      console.log('Received select-barcode-hid event with data:', data);
+      const barcodeSelectorOptions = data.map(option => `<option value="${option.path}">${option.manufacturer} ${option.product}</option>`);
+      document.getElementById("barcode-hid-selector").innerHTML = barcodeSelectorOptions.join('\n');
+      document.getElementById("logo-link").style.display = "none";
+      document.getElementById("barcode-hid-selector-parent").style.display = "block";
+    });
+
+    document.getElementById("submit-swiper-hid").addEventListener("click", () => {
+      const hidSelection = document.getElementById('swiper-hid-selector').value;
+      console.log('Submitting HID selection:', hidSelection);
+      ipcRenderer.send('swiper-hid-selection', hidSelection);
+      document.getElementById("swiper-hid-selector-parent").style.display = "none";
+      document.getElementById("logo-link").style.display = "block";
+    });
+
+    document.getElementById("skip-swiper-hid").addEventListener("click", () => {
+      ipcRenderer.send('skip-swiper-selection');
+      document.getElementById("swiper-hid-selector-parent").style.display = "none";
+      document.getElementById("logo-link").style.display = "block";
+    });
+
+
+    document.getElementById("submit-barcode-hid").addEventListener("click", () => {
+      const barcodeHidSelection = document.getElementById('barcode-hid-selector').value;
+      console.log('Submitting Barcode HID selection:', barcodeHidSelection);
+      ipcRenderer.send('barcode-hid-selection', barcodeHidSelection);
+      document.getElementById("barcode-hid-selector-parent").style.display = "none";
+      document.getElementById("logo-link").style.display = "block";
+    });
+
+    document.getElementById("skip-barcode-hid").addEventListener("click", () => {
+      ipcRenderer.send('skip-barcode-selection');
+      document.getElementById("barcode-hid-selector-parent").style.display = "none";
+      document.getElementById("logo-link").style.display = "block";
+
+    });
+  </script>
+</body>
+
+</html>

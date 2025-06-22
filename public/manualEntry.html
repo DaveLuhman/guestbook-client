@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Manual Entry</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h2 { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; }
+        input { width: 95%; padding: 8px; margin-bottom: 10px; }
+        button { padding: 8px 12px; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h2>Manual Entry</h2>
+    <form id="manual-entry-form">
+        <div>
+            <label for="name">Name:</label>
+            <input type="text" id="name" required>
+        </div>
+        <div>
+            <label for="onecard">Onecard:</label>
+            <input type="text" id="onecard" required>
+        </div>
+        <button type="submit">Submit</button>
+        <p class="error" id="error-message"></p>
+    </form>
+    <script>
+        const { ipcRenderer } = require('electron');
+        const form = document.getElementById('manual-entry-form');
+        const errorMessage = document.getElementById('error-message');
+
+        form.addEventListener('submit', (event) => {
+            event.preventDefault();
+            errorMessage.textContent = '';
+            const name = document.getElementById('name').value.trim();
+            const onecard = document.getElementById('onecard').value.trim();
+
+            if (!name || !onecard) {
+                errorMessage.textContent = 'Both Name and Onecard are required.';
+                return;
+            }
+
+            if (!/^\d{7}$/.test(onecard)) {
+                errorMessage.textContent = 'Onecard must be exactly 7 digits.';
+                return;
+            }
+
+            // Send the manual entry data via IPC
+            ipcRenderer.send('manual-entry-submit', { name, onecard });
+        });
+
+        ipcRenderer.on('manual-entry-success', () => {
+            window.close();
+        });
+
+        ipcRenderer.on('manual-entry-error', (event, error) => {
+            errorMessage.textContent = 'Error: ' + error;
+        });
+    </script>
+</body>
+</html>

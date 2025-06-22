@@ -1,0 +1,44 @@
+// Prevents additional console window on Windows in release, DO NOT REMOVE!!
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod devices;
+mod hid;
+
+use devices::barcode::{listen_to_barcode, open_symbol_scanner};
+
+#[tauri::command]
+fn get_hid_devices() -> Vec<String> {
+    hid::list_devices()
+        .into_iter()
+        .map(|d| {
+            format!(
+                "{}:{} - {} ({:?})",
+                d.vendor_id(),
+                d.product_id(),
+                d.product_string().unwrap_or("Unknown"),
+                d.path()
+            )
+        })
+        .collect()
+}
+#[tauri::command]
+fn start_barcode_listener(window: tauri::Window) -> Result<(), String> {
+    let api = hidapi::HidApi::new().map_err(|e| e.to_string())?;
+
+    match open_symbol_scanner(&api) {
+        Some(device) => {
+            listen_to_barcode(device, window);
+            Ok(())
+        }
+        None => Err("No compatible barcode scanner found.".into()),
+    }
+}
+fn main() {
+    tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![
+            get_hid_devices,
+            start_barcode_listener,
+            // add other commands here as you implement them
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running Tauri application");
+}
