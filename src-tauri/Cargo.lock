@@ -1396,6 +1396,7 @@ version = "0.1.0"
 dependencies = [
  "hidapi",
  "lazy_static",
+ "regex",
  "serde",
  "serde_json",
  "tauri",

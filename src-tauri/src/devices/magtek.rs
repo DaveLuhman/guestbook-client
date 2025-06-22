@@ -2,14 +2,14 @@ use hidapi::{HidApi, HidDevice};
 use regex::Regex;
 use serde::Serialize;
 use std::time::{Duration, Instant};
-use tauri::Window;
+use tauri::{Emitter, Window};
 
 lazy_static::lazy_static! {
     static ref ID_RE: Regex = Regex::new(r"(\d{7})\s{3}").unwrap();
     static ref NAME_RE: Regex = Regex::new(r"(?<=\^)(.*?)(?=\^)").unwrap();
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct CardData {
     pub id: String,
     pub name: String,
@@ -22,7 +22,7 @@ fn parse_card_data(data: &str) -> Option<CardData> {
     let name_caps = NAME_RE.captures(track1)?;
 
     let id = id_caps.get(1)?.as_str().to_string();
-    let name = name_caps.get(1)?.trim().to_string();
+    let name = name_caps.get(1)?.as_str().to_string();
 
     Some(CardData { id, name })
 }
