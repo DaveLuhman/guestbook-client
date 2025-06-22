@@ -23,12 +23,15 @@ window.addEventListener("DOMContentLoaded", () => {
 
 import { listen } from "@tauri-apps/api/event";
 
-await invoke("start_barcode_listener");
+(async () => {
+  await invoke("start_barcode_listener");
+  await invoke("start_magtek_listener");
 
-listen("hid-data", event => {
-  console.log("Scanned:", event.payload); // should be digits-only
-});
+  listen("hid-data", event => {
+    console.log("Scanned:", event.payload); // should be digits-only
+  });
 
-listen("hid-error", event => {
-  console.error("Scan error:", event.payload);
-});
+  listen("hid-error", event => {
+    console.error("Scan error:", event.payload);
+  });
+})();
