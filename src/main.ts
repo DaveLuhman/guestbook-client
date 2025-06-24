@@ -28,7 +28,7 @@ import { listen } from "@tauri-apps/api/event";
   await invoke("start_magtek_listener");
 
   listen("hid-data", event => {
-    console.log("Scanned:", event.payload); // should be digits-only
+    console.log("Scanned:", event); // should be digits-only
   });
 
   listen("magtek-data", event => {

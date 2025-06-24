@@ -1,65 +1,73 @@
 use hidapi::{HidApi, HidDevice};
 use regex::Regex;
 use serde::Serialize;
-use std::time::{Duration, Instant};
 use tauri::{Emitter, Window};
 
 lazy_static::lazy_static! {
     static ref ID_RE: Regex = Regex::new(r"(\d{7})\s{3}").unwrap();
-    static ref NAME_RE: Regex = Regex::new(r"(?<=\^)(.*?)(?=\^)").unwrap();
+    static ref NAME_RE: Regex = Regex::new(r"\^([^^]*)\^").unwrap();
 }
 
 #[derive(Serialize, Clone)]
 pub struct CardData {
-    pub id: String,
+    pub onecard: String,
     pub name: String,
 }
 
 fn parse_card_data(data: &str) -> Option<CardData> {
     let track1 = data.trim().split('?').next().unwrap_or(data);
-
-    let id_caps = ID_RE.captures(track1)?;
-    let name_caps = NAME_RE.captures(track1)?;
-
-    let id = id_caps.get(1)?.as_str().to_string();
-    let name = name_caps.get(1)?.as_str().to_string();
-
-    Some(CardData { id, name })
+    // Extract name between first two '^'
+    let name = track1.split('^').nth(1)?.trim().to_string();
+    // Find all 7-digit numbers in track1, take the last one
+    let id_re = Regex::new(r"(\d{7})\s{3}").ok()?;
+    let onecard = id_re.captures_iter(track1).last()?.get(1)?.as_str().to_string();
+    println!("parse_card_data: name = {:?}, onecard = {:?}", name, onecard);
+    Some(CardData { onecard, name })
 }
 
 pub fn listen_to_magtek(device: HidDevice, window: Window) {
     std::thread::spawn(move || {
-        let mut buffer = [0u8; 64];
+        let mut buffer = [0u8; 256];
         let mut scan_buffer = String::new();
-        let mut last_char_time = Instant::now();
 
         loop {
             match device.read(&mut buffer) {
                 Ok(size) => {
-                    let now = Instant::now();
-                    let raw_data = &buffer[..size];
-                    let part = String::from_utf8_lossy(raw_data);
+                    let mut part: String = buffer[..size]
+                        .iter()
+                        .filter(|&&b| b != 0)
+                        .map(|&b| b as char)
+                        .collect();
 
-                    if now.duration_since(last_char_time) > Duration::from_millis(150) {
-                        if !scan_buffer.is_empty() {
-                            if let Some(card) = parse_card_data(&scan_buffer) {
-                                window.emit("magtek-data", card).ok();
-                            } else {
-                                window.emit("hid-data", scan_buffer.clone()).ok();
-                            }
-                            scan_buffer.clear();
+                    // Strip N' prefix if present before accumulating
+                    if let Some(idx) = part.find('%') {
+                        if idx >= 2 && &part[idx-2..idx] == "N'" {
+                            part = part[idx..].to_string();
                         }
                     }
 
-                    scan_buffer.push_str(&part);
-                    last_char_time = now;
+                    // If a new swipe starts before the previous one finished, reset the buffer
+                    if !scan_buffer.is_empty() && part.contains('%') {
+                        scan_buffer.clear();
+                    }
 
-                    if scan_buffer.contains('\n') || scan_buffer.contains('\r') {
-                        let cleaned = scan_buffer.trim().to_string();
-                        if let Some(card) = parse_card_data(&cleaned) {
+                    // Start accumulating on the first '%'
+                    if scan_buffer.is_empty() {
+                        if let Some(percent_idx) = part.find('%') {
+                            scan_buffer = part[percent_idx..].to_string();
+                        }
+                    } else {
+                        scan_buffer.push_str(&part);
+                    }
+
+                    // Only accept '?' as end-of-track
+                    if let Some(end) = scan_buffer.find('?') {
+                        let track1 = &scan_buffer[..=end];
+                        let cleaned = track1.trim();
+                        if let Some(card) = parse_card_data(cleaned) {
                             window.emit("magtek-data", card).ok();
                         } else {
-                            window.emit("hid-data", cleaned.clone()).ok();
+                            window.emit("hid-data", cleaned.to_string()).ok();
                         }
                         scan_buffer.clear();
                     }
@@ -98,7 +106,7 @@ mod tests {
     fn parse_valid_track() {
         let data = "%B1234567   ^DOE/JOHN^1234567890123456?";
         let card = parse_card_data(data).expect("Should parse");
-        assert_eq!(card.id, "1234567");
+        assert_eq!(card.onecard, "1234567");
         assert_eq!(card.name, "DOE/JOHN");
     }
 
