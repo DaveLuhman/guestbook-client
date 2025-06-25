@@ -43,11 +43,8 @@
     ipcRenderer.on("guest-entry", (event, data) => {
       const entryData = document.getElementById("entry-data");
       const body = document.body;
-
-      // Flash screen green
       body.style.backgroundColor = "green";
 
-      // Display entry data
       entryData.innerHTML = `
         <p><strong>Name:</strong> ${data.name}</p>
         <div class="entry-row">
