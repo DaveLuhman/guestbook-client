@@ -27,7 +27,7 @@ pub fn listen_to_barcode(device: HidDevice, window: Window) {
                     let cleaned = scan_buffer.replace(|c: char| !c.is_ascii_digit(), "");
 
                     if cleaned.len() == 7 || cleaned.len() == 9 {
-                        window.emit("hid-data", cleaned.clone()).ok();
+                        window.emit("barcode-data", cleaned.clone()).ok();
                         scan_buffer.clear();
                     }
                 }
