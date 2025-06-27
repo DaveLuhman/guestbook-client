@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "guestbook-tauri-ts",
+        "title": "Swipe or Scan your OneCard",
         "width": 800,
         "height": 600
       }
