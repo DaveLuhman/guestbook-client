@@ -2,7 +2,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod devices;
 mod hid;
-
 use devices::barcode::{listen_to_barcode, open_symbol_scanner};
 use devices::magtek::{listen_to_magtek, open_magtek_reader};
 
@@ -61,7 +60,6 @@ fn main() {
             get_hid_devices,
             start_barcode_listener,
             start_magtek_listener,
-            // add other commands here as you implement them
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tauri application");
