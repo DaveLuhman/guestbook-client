@@ -1,18 +1,9 @@
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+const entryDataEl = document.getElementById('entry-data');
 
-export async function startMagstripListener() {
-  await invoke("start_magtek_listener");
-
-  listen("hid-data", event => {
-    console.log("Card swipe:", event.payload);
-  });
-
-  listen("magtek-data", event => {
-    console.log("MagTek parsed:", event.payload);
-  });
-
-  listen("hid-error", event => {
-    console.error("MagTek error:", event.payload);
-  });
-}
+export const updateSwipeData = (payload: any) => {
+  if (entryDataEl) {
+    const body = document.body;
+    body.style.backgroundColor = "green";
+    entryDataEl.innerHTML = `<div class="entry-data-container"><p>Name: ${payload.name}</p><p>Onecard: ${payload.onecard}</p></div>`;
+  }
+};
