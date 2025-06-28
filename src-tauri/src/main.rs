@@ -4,6 +4,7 @@ mod devices;
 mod hid;
 use devices::barcode::{listen_to_barcode, open_symbol_scanner};
 use devices::magtek::{listen_to_magtek, open_magtek_reader};
+use tauri::Manager;
 
 #[tauri::command]
 fn get_hid_devices() -> Vec<String> {
@@ -45,6 +46,13 @@ fn start_magtek_listener(window: tauri::Window) -> Result<(), String> {
         None => Err("No compatible MagTek reader found.".into()),
     }
 }
+#[tauri::command]
+async fn show_first_run_window(app: tauri::AppHandle) {
+    let first_run_window = app.get_webview_window("firstRun").unwrap();
+    first_run_window.show().unwrap();
+    first_run_window.set_focus().unwrap();
+}
+
 fn main() {
     #[cfg(debug_assertions)] // only enable instrumentation in development builds
     let devtools = tauri_plugin_devtools::init();
@@ -60,6 +68,7 @@ fn main() {
             get_hid_devices,
             start_barcode_listener,
             start_magtek_listener,
+            show_first_run_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tauri application");

@@ -14,8 +14,17 @@
     "windows": [
       {
         "title": "Swipe or Scan your OneCard",
+        "url": "file://../public/index.html",
+        "label": "main",
+        "fullscreen": true
+      },
+      {
+        "title": "Guestbook Setup",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "url": "file://../public/firstRun.html",
+        "visible": false,
+        "label": "firstRun"
       }
     ],
     "security": {

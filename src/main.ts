@@ -1,10 +1,14 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { startHIDManager } from './hid/HIDManager';
-import { loadDeviceConfig } from './config/deviceConfig';
+import { isFirstRun } from './config/deviceConfig';
+import { registerDevice } from './network/registerDevice';
 
 (async () => {
-  await startHIDManager();
-  const deviceConfig = await loadDeviceConfig();
-  console.log(deviceConfig);
+  const isFirstRunResult = await isFirstRun();
+  if (isFirstRunResult) {
+    await invoke('show_first_run_window');
+  } else {
+    await startHIDManager();
+  }
 })();

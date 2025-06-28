@@ -59,7 +59,7 @@ export async function registerDevice(options: RegistrationOptions): Promise<any>
     location: options.location ?? 'Unknown',
   };
 
-  const res = await fetch(`${options.serverUrl}/api/v1/devices/register`, {
+  const res = await fetch(`${options.serverUrl}/devices/register`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

@@ -14,6 +14,14 @@ const CONFIG_FILE = '.guestbook-config.json';
 function getConfigPath(): string {
   return `${homedir()}/${CONFIG_FILE}`;
 }
+export async function isFirstRun(): Promise<boolean> {
+  try {
+    await fs.access(getConfigPath());
+    return false;
+  } catch {
+    return true;
+  }
+}
 
 export async function loadDeviceConfig(): Promise<DeviceConfig> {
   try {
