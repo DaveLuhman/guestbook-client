@@ -4,8 +4,9 @@ use serde_json::json; // Add this import for the `json!` macro
 
 pub async fn register_device(config_manager: tauri::State<'_, ConfigManager>) -> Result<(), String> {
     let config = get_full_config(config_manager.clone());
+    let register_url = format!("{}/devices/register", config.server_url.clone().unwrap());
     let client = reqwest::Client::new();
-    let response = client.post(config.server_url.clone().unwrap())
+    let response = client.post(register_url)
         .header("Content-Type", "application/json")
         .body(
             serde_json::to_string(&json!({

@@ -19,8 +19,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            server_url: None,
-
+            server_url: Some("https://guestbook-api.ep.ado.software/api/v1".to_string()),
             server_token: None,
             device_id: Some(compute_device_id()),
             device_location: None,
@@ -109,7 +108,7 @@ impl ConfigManager {
         // Event emission stub: config changed
         Ok(())
     }
-    
+
     pub fn set<T, F: Fn(&mut Config, T)>(&self, value: T, f: F) {
         {
             let mut config = self.config.lock().unwrap();
