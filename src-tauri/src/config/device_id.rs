@@ -1,49 +1,31 @@
-use mac_address::{MacAddress, MacAddressIterator};
+use mac_address::get_mac_address;
 use rand::distr::Alphanumeric;
 use rand::Rng;
 
+fn is_zero_mac(mac: &mac_address::MacAddress) -> bool {
+    mac.bytes().iter().all(|&b| b == 0)
+}
+
 fn get_primary_mac_address() -> Option<String> {
-    // Try eth0 or wlan0 first
-    if let Ok(iter) = MacAddressIterator::new() {
-        for iface in iter {
-            if let Ok((name, mac_result)) = iface {
-                if let Ok(mac) = mac_result {
-                    if (name == "eth0" || name == "wlan0") && !mac.is_zero() {
-                        return Some(mac.to_string());
-                    }
-                }
-            }
-        }
+    match get_mac_address() {
+        Ok(Some(mac)) if !is_zero_mac(&mac) => Some(mac.to_string()),
+        _ => None,
     }
-    // Otherwise, any non-loopback, non-zero MAC
-    if let Ok(iter) = MacAddressIterator::new() {
-        for iface in iter {
-            if let Ok((_, mac_result)) = iface {
-                if let Ok(mac) = mac_result {
-                    if !mac.is_zero() {
-                        return Some(mac.to_string());
-                    }
-                }
-            }
-        }
-    }
-    None
 }
 
 pub fn compute_device_id() -> String {
     if let Some(mac) = get_primary_mac_address() {
-        mac.replace(":", "")
-            .chars()
-            .rev()
-            .take(6)
-            .collect::<String>()
-            .chars()
-            .rev()
-            .collect()
+        let mac_clean: String = mac.chars().filter(|&c| c != ':').collect();
+        let len = mac_clean.len();
+        let last_six = if len >= 6 {
+            &mac_clean[len - 6..]
+        } else {
+            &mac_clean[..]
+        };
+        last_six.to_string()
     } else {
-        let mut rng = rand::rng();
-        (&mut rng)
-            .sample_iter(Alphanumeric)
+        let rng = rand::rng();
+        rng.sample_iter(&Alphanumeric)
             .take(6)
             .map(char::from)
             .collect()

@@ -1,11 +1,10 @@
+use crate::config::device_id::compute_device_id;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use crate::config::device_id::{compute_device_id};
 use tauri::State;
-
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
@@ -14,6 +13,7 @@ pub struct Config {
     pub device_id: Option<String>,
     pub device_location: Option<String>,
     pub device_friendly_name: Option<String>,
+    pub first_run: bool,
 }
 
 impl Default for Config {
@@ -25,6 +25,7 @@ impl Default for Config {
             device_id: Some(compute_device_id()),
             device_location: None,
             device_friendly_name: None,
+            first_run: true,
         }
     }
 }
@@ -76,11 +77,21 @@ impl ConfigManager {
         let mut default = Config::default();
         if let Some(cfg) = config {
             // Merge fields, prioritizing loaded config
-            if let Some(server_url) = cfg.server_url { default.server_url = Some(server_url); }
-            if let Some(server_token) = cfg.server_token { default.server_token = Some(server_token); }
-            if let Some(device_id) = cfg.device_id { default.device_id = Some(device_id); }
-            if let Some(device_location) = cfg.device_location { default.device_location = Some(device_location); }
-            if let Some(device_friendly_name) = cfg.device_friendly_name { default.device_friendly_name = Some(device_friendly_name); }
+            if let Some(server_url) = cfg.server_url {
+                default.server_url = Some(server_url);
+            }
+            if let Some(server_token) = cfg.server_token {
+                default.server_token = Some(server_token);
+            }
+            if let Some(device_id) = cfg.device_id {
+                default.device_id = Some(device_id);
+            }
+            if let Some(device_location) = cfg.device_location {
+                default.device_location = Some(device_location);
+            }
+            if let Some(device_friendly_name) = cfg.device_friendly_name {
+                default.device_friendly_name = Some(device_friendly_name);
+            }
         }
         default
     }
@@ -98,12 +109,7 @@ impl ConfigManager {
         // Event emission stub: config changed
         Ok(())
     }
-
-    pub fn get<T: Clone, F: Fn(&Config) -> T>(&self, f: F) -> T {
-        let config = self.config.lock().unwrap();
-        f(&*config)
-    }
-
+    
     pub fn set<T, F: Fn(&mut Config, T)>(&self, value: T, f: F) {
         {
             let mut config = self.config.lock().unwrap();
@@ -112,50 +118,10 @@ impl ConfigManager {
         let _ = self.save_config();
     }
 
-
-    pub fn get_server_url(&self) -> Option<String> {
-        self.get(|c| c.server_url.clone())
-    }
-    pub fn set_server_url(&self, server_url: String) -> Result<(), String> {
-        if !server_url.starts_with("http") {
-            return Err("Invalid server URL".to_string());
-        }
-        self.set(Some(server_url), |c, v| c.server_url = v);
-        Ok(())
+    pub fn set_server_token(&self, server_token: String) {
+        self.set(server_token, |c, v| c.server_token = Some(v));
     }
 
-    pub fn get_server_token(&self) -> Option<String> {
-        self.get(|c| c.server_token.clone())
-    }
-    pub fn set_server_token(&self, token: String) {
-        self.set(Some(token), |c, v| c.server_token = v);
-    }
-
-    pub fn get_device_id(&self) -> Option<String> {
-        self.get(|c| c.device_id.clone())
-    }
-    pub fn set_device_id(&self, device_id: String) {
-        self.set(Some(device_id), |c, v| c.device_id = v);
-    }
-
-    pub fn get_device_location(&self) -> Option<String> {
-        self.get(|c| c.device_location.clone())
-    }
-    pub fn set_device_location(&self, device_location: String) {
-        self.set(Some(device_location), |c, v| c.device_location = v);
-    }
-
-    pub fn get_device_friendly_name(&self) -> Option<String> {
-        self.get(|c| c.device_friendly_name.clone())
-    }
-    pub fn set_device_friendly_name(&self, device_friendly_name: String) {
-        self.set(Some(device_friendly_name), |c, v| c.device_friendly_name = v);
-    }
-
-
-    pub fn config_exists(&self) -> bool {
-        self.config_path.exists()
-    }
 }
 
 // Optionally, you can provide a global singleton instance using lazy_static or once_cell

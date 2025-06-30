@@ -10,14 +10,17 @@
     <div class="container">
         <h1>Welcome to the Guestbook!</h1>
         <div class="row">
-            <h5>Please enter your name and location to get started.</h5>
+            <h5>Please enter the device name and location to get started.</h5>
         </div>
         <div class="row">
-            <input type="text" id="name" placeholder="Name" />
-            <input type="text" id="location" placeholder="Location" />
+            <h5 id="error-text" class="error"></h5>
+        </div>
+        <div class="row">
+            <input type="text" id="device_name" placeholder="Device Name" />
+            <input type="text" id="device_location" placeholder="Device Location" />
             <button id="submit">Submit</button>
         </div>
     </div>
-    <script src="/src/firstRun.ts"></script>
+    <script type="module" src="/src/firstRun.ts"></script>
 </body>
 </html>

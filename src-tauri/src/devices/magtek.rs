@@ -20,8 +20,16 @@ fn parse_card_data(data: &str) -> Option<CardData> {
     let name = track1.split('^').nth(1)?.trim().to_string();
     // Find all 7-digit numbers in track1, take the last one
     let id_re = Regex::new(r"(\d{7})\s{3}").ok()?;
-    let onecard = id_re.captures_iter(track1).last()?.get(1)?.as_str().to_string();
-    println!("parse_card_data: name = {:?}, onecard = {:?}", name, onecard);
+    let onecard = id_re
+        .captures_iter(track1)
+        .last()?
+        .get(1)?
+        .as_str()
+        .to_string();
+    println!(
+        "parse_card_data: name = {:?}, onecard = {:?}",
+        name, onecard
+    );
     Some(CardData { onecard, name })
 }
 
@@ -41,7 +49,7 @@ pub fn listen_to_magtek(device: HidDevice, window: Window) {
 
                     // Strip N' prefix if present before accumulating
                     if let Some(idx) = part.find('%') {
-                        if idx >= 2 && &part[idx-2..idx] == "N'" {
+                        if idx >= 2 && &part[idx - 2..idx] == "N'" {
                             part = part[idx..].to_string();
                         }
                     }
