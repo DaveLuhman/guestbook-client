@@ -10,6 +10,8 @@ use devices::barcode::{listen_to_barcode, open_symbol_scanner};
 use devices::magtek::{listen_to_magtek, open_magtek_reader};
 use tauri::Manager;
 
+use crate::api::entries::submit_entry;
+
 #[tauri::command]
 fn get_hid_devices() -> Vec<String> {
     hid::list_devices()
@@ -50,7 +52,11 @@ fn start_magtek_listener(window: tauri::Window) -> Result<(), String> {
         None => Err("No compatible MagTek reader found.".into()),
     }
 }
-
+#[tauri::command]
+async fn submit_swipe_entry(config_manager: tauri::State<'_, ConfigManager>, card_data: String) -> Result<(), String> {
+    submit_entry(config_manager, card_data).await.unwrap();
+    Ok(())
+}
 #[tauri::command]
 async fn first_run_trigger(app: tauri::AppHandle) {
     let main_window = app.get_webview_window("main").unwrap();
@@ -114,6 +120,7 @@ fn main() {
             get_full_config,
             submit_first_run_config,
             send_heartbeat_command,
+            submit_swipe_entry,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tauri application");
