@@ -100,6 +100,7 @@ async fn send_heartbeat_command(config_manager: tauri::State<'_, ConfigManager>)
     send_heartbeat(config_manager).await
 }
 
+
 fn main() {
     #[cfg(debug_assertions)] // only enable instrumentation in development builds
     let devtools = tauri_plugin_devtools::init();

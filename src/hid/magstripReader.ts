@@ -1,6 +1,11 @@
 const entryDataEl = document.getElementById('entry-data');
 
-export const updateSwipeData = (payload: any) => {
+export interface swipeData {
+  name: string;
+  onecard: string;
+}
+
+export const updateSwipeData = (payload: swipeData) => {
   if (entryDataEl) {
     const body = document.body;
     body.style.backgroundColor = "green";

@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { updateScanData } from "./barcodeScanner";
-import { updateSwipeData } from "./magstripReader";
+import { type swipeData, updateSwipeData } from "./magstripReader";
 
 const entryDataEl = document.querySelector('#entry-data');
 
@@ -33,14 +33,15 @@ export async function startHIDManager() {
     await invoke('start_magtek_listener');
 
     listen('barcode-data', (event) => {
-      console.log('Scanned:', event); // should be digits-only
-      updateScanData(event.payload);
+      console.log('Scanned:', event.payload);
+      updateScanData(event.payload as string);
       resetEntryData();
     });
 
     listen('magtek-data', (event) => {
       console.log('MagTek card:', event.payload);
-      updateSwipeData(event.payload);
+      updateSwipeData(event.payload as swipeData);
+      invoke('submit_swipe_entry', { card_data: event.payload as swipeData });
       resetEntryData();
     });
 

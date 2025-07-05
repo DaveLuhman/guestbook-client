@@ -1,6 +1,7 @@
 const entryDataEl = document.getElementById('entry-data');
 
-export const updateScanData = (payload: any) => {
+
+export const updateScanData = (payload: string) => {
     if (entryDataEl) {
       const body = document.body;
       body.style.backgroundColor = "green";
