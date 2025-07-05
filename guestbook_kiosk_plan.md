@@ -24,7 +24,7 @@
 | Submission to API       | `POST /api/v1/entries/submit`                               | []       |
 | Local queue & retry     | File-based or SQLite-based buffer                           | []       |
 | Config + auth           | Token stored locally in JSON                                | []       |
-| Heartbeat               | `GET /api/v1/devices/heartbeat/{token}` ping                | []       |
+| Heartbeat               | `GET /api/v1/devices/heartbeat/{token}` ping                | [x]       |
 | Sound + visual feedback | Play success/error sound; maybe flash background briefly    | []       |
 | UI                      | Minimal: config screen + status indicator only              | []       |
 
