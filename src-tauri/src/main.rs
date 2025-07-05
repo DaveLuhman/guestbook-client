@@ -4,7 +4,7 @@ mod config;
 mod api;
 mod devices;
 mod hid;
-use api::devices::register_device;
+use api::devices::{register_device, send_heartbeat};
 use config::config_manager::{get_full_config, ConfigManager};
 use devices::barcode::{listen_to_barcode, open_symbol_scanner};
 use devices::magtek::{listen_to_magtek, open_magtek_reader};
@@ -89,6 +89,11 @@ async fn submit_first_run_config(
     Ok(())
 }
 
+#[tauri::command]
+async fn send_heartbeat_command(config_manager: tauri::State<'_, ConfigManager>) -> Result<(), String> {
+    send_heartbeat(config_manager).await
+}
+
 fn main() {
     #[cfg(debug_assertions)] // only enable instrumentation in development builds
     let devtools = tauri_plugin_devtools::init();
@@ -108,6 +113,7 @@ fn main() {
             first_run_trigger,
             get_full_config,
             submit_first_run_config,
+            send_heartbeat_command,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tauri application");
