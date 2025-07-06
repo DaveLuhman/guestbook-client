@@ -10,7 +10,7 @@ use devices::barcode::{listen_to_barcode, open_symbol_scanner};
 use devices::magtek::{listen_to_magtek, open_magtek_reader};
 use tauri::Manager;
 
-use crate::api::entries::submit_entry;
+use api::entries::{submit_entry, CardData};
 
 #[tauri::command]
 fn get_hid_devices() -> Vec<String> {
@@ -53,8 +53,8 @@ fn start_magtek_listener(window: tauri::Window) -> Result<(), String> {
     }
 }
 #[tauri::command]
-async fn submit_swipe_entry(config_manager: tauri::State<'_, ConfigManager>, card_data: String) -> Result<(), String> {
-    submit_entry(config_manager, card_data).await.unwrap();
+async fn submit_swipe_entry(config_manager: tauri::State<'_, ConfigManager>, name: String, onecard: String  ) -> Result<(), String> {
+    submit_entry(config_manager, CardData { name, onecard }).await.unwrap();
     Ok(())
 }
 #[tauri::command]

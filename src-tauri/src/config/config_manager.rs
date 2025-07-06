@@ -91,6 +91,7 @@ impl ConfigManager {
             if let Some(device_friendly_name) = cfg.device_friendly_name {
                 default.device_friendly_name = Some(device_friendly_name);
             }
+            default.first_run = cfg.first_run;
         }
         default
     }
@@ -127,5 +128,7 @@ impl ConfigManager {
 
 #[tauri::command]
 pub fn get_full_config(config_manager: State<'_, ConfigManager>) -> Config {
-    config_manager.config.lock().unwrap().clone()
+    let config = config_manager.config.lock().unwrap().clone();
+    println!("Config: {:?}", config);
+    config
 }

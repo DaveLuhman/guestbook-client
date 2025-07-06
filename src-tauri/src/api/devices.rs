@@ -42,6 +42,7 @@ pub async fn send_heartbeat(config_manager: tauri::State<'_, ConfigManager>) -> 
     let client = reqwest::Client::new();
     let response = client.get(heartbeat_url)
         .header("Content-Type", "application/json")
+        .header("Authorization", format!("Bearer {}", config.server_token.clone().unwrap()))
         .send()
         .await;
     if response.is_err() {
