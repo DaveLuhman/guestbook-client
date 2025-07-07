@@ -58,6 +58,12 @@ async fn submit_swipe_entry(config_manager: tauri::State<'_, ConfigManager>, nam
     Ok(())
 }
 #[tauri::command]
+async fn submit_barcode_entry(config_manager: tauri::State<'_, ConfigManager>, onecard: String  ) -> Result<(), String> {
+    let name = "Barcode".to_string();
+    submit_entry(config_manager, CardData { name, onecard }).await.unwrap();
+    Ok(())
+}
+#[tauri::command]
 async fn first_run_trigger(app: tauri::AppHandle) {
     let main_window = app.get_webview_window("main").unwrap();
     let first_run_window = app.get_webview_window("firstRun").unwrap();
@@ -122,6 +128,7 @@ fn main() {
             submit_first_run_config,
             send_heartbeat_command,
             submit_swipe_entry,
+            submit_barcode_entry,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tauri application");

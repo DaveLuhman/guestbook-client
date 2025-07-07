@@ -47,8 +47,27 @@ export async function startHIDManager() {
   }
 
   listen('barcode-data', (event) => {
-    console.log('Scanned:', event.payload);
-    updateScanData(event.payload as string);
+    try {
+      console.log('Barcode scanned:', event.payload);
+      // For barcode, expect event.payload to be the 7-digit onecard number (string or number)
+      let onecard = '';
+      if (typeof event.payload === 'string' && /^\d{7}$/.test(event.payload)) {
+        onecard = event.payload;
+      } else if (typeof event.payload === 'number' && event.payload.toString().length === 7) {
+        onecard = event.payload.toString();
+      } else {
+        console.error('Invalid barcode payload:', event.payload);
+        displayHidError('Invalid barcode data');
+        resetEntryData();
+        return;
+      }
+      updateScanData(onecard); // Show scanned value to user
+      // Submit only the onecard value to the backend
+      invoke('submit_barcode_entry', { onecard });
+    } catch (error) {
+      console.error('Submit error:', error);
+      displayHidError(error as string);
+    }
     resetEntryData();
   });
 
