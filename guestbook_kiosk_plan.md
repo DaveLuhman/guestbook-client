@@ -20,10 +20,10 @@
 | Responsibility          | Detail                                                      | Complete |
 | ----------------------- | ----------------------------------------------------------- | -------- |
 | Input acquisition       | HID device listeners (scanner, swiper)                      | [X]       |
-| Entry formatting        | Consistent data object (onecard, name, timestamp, deviceId) | []       |
-| Submission to API       | `POST /api/v1/entries/submit`                               | []       |
+| Entry formatting        | Consistent data object (onecard, name, timestamp, deviceId) | [x]       |
+| Submission to API       | `POST /api/v1/entries/submit`                               | [x]       |
 | Local queue & retry     | File-based or SQLite-based buffer                           | []       |
-| Config + auth           | Token stored locally in JSON                                | []       |
+| Config + auth           | Token stored locally in JSON                                | [x]       |
 | Heartbeat               | `GET /api/v1/devices/heartbeat/{token}` ping                | [x]       |
 | Sound + visual feedback | Play success/error sound; maybe flash background briefly    | []       |
 | UI                      | Minimal: config screen + status indicator only              | []       |
