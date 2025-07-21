@@ -1,7 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-mod config;
 mod api;
+mod config;
 mod devices;
 mod hid;
 use api::devices::{register_device, send_heartbeat};
@@ -53,14 +53,25 @@ fn start_magtek_listener(window: tauri::Window) -> Result<(), String> {
     }
 }
 #[tauri::command]
-async fn submit_swipe_entry(config_manager: tauri::State<'_, ConfigManager>, name: String, onecard: String  ) -> Result<(), String> {
-    submit_entry(config_manager, CardData { name, onecard }).await.unwrap();
+async fn submit_swipe_entry(
+    config_manager: tauri::State<'_, ConfigManager>,
+    name: String,
+    onecard: String,
+) -> Result<(), String> {
+    submit_entry(config_manager, CardData { name, onecard })
+        .await
+        .unwrap();
     Ok(())
 }
 #[tauri::command]
-async fn submit_barcode_entry(config_manager: tauri::State<'_, ConfigManager>, onecard: String  ) -> Result<(), String> {
+async fn submit_barcode_entry(
+    config_manager: tauri::State<'_, ConfigManager>,
+    onecard: String,
+) -> Result<(), String> {
     let name = "Barcode".to_string();
-    submit_entry(config_manager, CardData { name, onecard }).await.unwrap();
+    submit_entry(config_manager, CardData { name, onecard })
+        .await
+        .unwrap();
     Ok(())
 }
 #[tauri::command]
@@ -102,10 +113,11 @@ async fn submit_first_run_config(
 }
 
 #[tauri::command]
-async fn send_heartbeat_command(config_manager: tauri::State<'_, ConfigManager>) -> Result<(), String> {
+async fn send_heartbeat_command(
+    config_manager: tauri::State<'_, ConfigManager>,
+) -> Result<(), String> {
     send_heartbeat(config_manager).await
 }
-
 
 fn main() {
     #[cfg(debug_assertions)] // only enable instrumentation in development builds
