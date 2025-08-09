@@ -58,7 +58,7 @@
         ],
         "files": {
           "/usr/share/guestbook-kiosk/README.md": "../README.md",
-          "/usr/share/guestbook-kiosk/appliance-setup": "../appliance setup/"
+          "/usr/share/guestbook-kiosk/appliance-setup": "../appliance-setup/"
         },
         "desktopTemplate": "desktop.desktop"
       }

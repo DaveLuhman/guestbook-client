@@ -16,14 +16,14 @@ fi
 # Check if Node.js is installed
 if ! command -v node &> /dev/null; then
     echo "❌ Error: Node.js is not installed. Please install Node.js first."
-    echo "💡 You can run the install-tauri-deps.sh script to install Node.js and other dependencies."
+    echo "💡 You can run the appliance-setup/install-tauri-deps.sh script to install Node.js and other dependencies."
     exit 1
 fi
 
 # Check if Rust is installed
 if ! command -v cargo &> /dev/null; then
     echo "❌ Error: Rust is not installed. Please install Rust first."
-    echo "💡 You can run the install-tauri-deps.sh script to install Rust and other dependencies."
+    echo "💡 You can run the appliance-setup/install-tauri-deps.sh script to install Rust and other dependencies."
     exit 1
 fi
 
@@ -39,9 +39,13 @@ echo "🚀 Configuring auto-start on boot..."
 # Create the application directory if it doesn't exist
 sudo mkdir -p /opt/guestbook-kiosk
 
-# Copy the built application to /opt/guestbook-kiosk/
+# Copy only the built application and necessary assets to /opt/guestbook-kiosk/
 echo "📦 Installing application to /opt/guestbook-kiosk/..."
-sudo cp -r . /opt/guestbook-kiosk/
+sudo cp -r src-tauri/target/release/guestbook-tauri-ts /opt/guestbook-kiosk/
+sudo cp -r dist /opt/guestbook-kiosk/
+sudo cp -r public /opt/guestbook-kiosk/
+sudo cp -r appliance-setup /opt/guestbook-kiosk/
+sudo cp README.md /opt/guestbook-kiosk/
 sudo chown -R $USER:$USER /opt/guestbook-kiosk/
 
 # Create systemd service file

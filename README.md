@@ -38,7 +38,7 @@ The Guestbook Kiosk Client is designed to run on kiosk devices (like Raspberry P
 - **Platform-specific dependencies**:
   - **Windows**: Visual Studio Build Tools
   - **macOS**: Xcode Command Line Tools
-  - **Linux**: Run `./appliance setup/install-tauri-deps.sh` to install all required dependencies
+  - **Linux**: Run `./appliance-setup/install-tauri-deps.sh` to install all required dependencies
 
 ## 🚀 Installation
 
@@ -109,19 +109,21 @@ The application runs in fullscreen kiosk mode by default, providing a clean inte
 When installed using `npm run first-run`, the application automatically starts on system boot and runs as a system service.
 
 **Service Management:**
+> **Note:** For cross-platform compatibility, use forward slashes (`/`) in script paths. If your folder names contain spaces, wrap the path in quotes (e.g., `"appliance setup/manage-service.sh"`). On Windows, use Git Bash or WSL for best results.
+
 ```bash
 # Check service status
-./appliance\ setup/manage-service.sh status
+./appliance-setup/manage-service.sh status
 
 # Start/stop the service
-./appliance\ setup/manage-service.sh start
-./appliance\ setup/manage-service.sh stop
+./appliance-setup/manage-service.sh start
+./appliance-setup/manage-service.sh stop
 
 # View live logs
-./appliance\ setup/manage-service.sh logs
+./appliance-setup/manage-service.sh logs
 
 # Restart the service
-./appliance\ setup/manage-service.sh restart
+./appliance-setup/manage-service.sh restart
 ```
 
 ### Configuration Access
@@ -146,11 +148,12 @@ guestbook-client/
 │   │   ├── db/            # Database operations
 │   │   └── devices/       # Device integration
 │   └── Cargo.toml         # Rust dependencies
-├── appliance setup/        # Setup and deployment scripts
+├── appliance-setup/        # Setup and deployment scripts
 │   ├── install-tauri-deps.sh    # Linux dependency installer
 │   ├── first-run-setup.sh       # First-time setup script
 │   ├── first-run-setup.bat      # Windows setup script
-│   └── manage-service.sh        # Service management script
+│   ├── manage-service.sh        # Service management script
+│   └── build-arm64-debian.sh    # ARM64 Debian package builder
 ├── public/                # Static assets
 └── package.json           # Node.js dependencies
 ```
@@ -293,9 +296,9 @@ Built applications are available in `src-tauri/target/release/`:
 - Verify sound files are present
 
 **Service Not Starting (Linux)**
-- Check service status: `./appliance setup/manage-service.sh status`
-- View service logs: `./appliance setup/manage-service.sh logs`
-- Ensure auto-start is enabled: `sudo ./appliance setup/manage-service.sh enable`
+- Check service status: `sudo ./appliance-setup/manage-service.sh status`
+- View service logs: `sudo ./appliance-setup/manage-service.sh logs`
+- Ensure auto-start is enabled: `sudo ./appliance-setup/manage-service.sh enable`
 
 ### Logs
 Application logs are available in:

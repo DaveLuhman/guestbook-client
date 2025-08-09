@@ -10,6 +10,7 @@ check_service() {
     if ! systemctl list-unit-files | grep -q "$SERVICE_NAME.service"; then
         echo "❌ Service $SERVICE_NAME.service not found."
         echo "💡 Run the first-run setup script to install the service: npm run first-run"
+        echo "💡 Or install manually: sudo ./appliance-setup/manage-service.sh install"
         exit 1
     fi
 }
@@ -40,7 +41,8 @@ show_usage() {
 # Check if running as root for certain commands
 check_root() {
     if [[ $EUID -ne 0 ]]; then
-        echo "❌ This command requires root privileges. Use 'sudo $0 $1'"
+        echo "❌ This script requires root privileges. Use 'sudo $0 $1'"
+        echo "💡 All commands in this script require root access for system service management."
         exit 1
     fi
 }
@@ -50,30 +52,30 @@ case "$1" in
     start)
         check_service
         echo "🚀 Starting $SERVICE_NAME service..."
-        sudo systemctl start $SERVICE_NAME
+        systemctl start $SERVICE_NAME
         echo "✅ Service started"
         ;;
     stop)
         check_service
         echo "🛑 Stopping $SERVICE_NAME service..."
-        sudo systemctl stop $SERVICE_NAME
+        systemctl stop $SERVICE_NAME
         echo "✅ Service stopped"
         ;;
     restart)
         check_service
         echo "🔄 Restarting $SERVICE_NAME service..."
-        sudo systemctl restart $SERVICE_NAME
+        systemctl restart $SERVICE_NAME
         echo "✅ Service restarted"
         ;;
     status)
         check_service
         echo "📊 Service status:"
-        sudo systemctl status $SERVICE_NAME --no-pager
+        systemctl status $SERVICE_NAME --no-pager
         ;;
     logs)
         check_service
         echo "📋 Service logs (press Ctrl+C to exit):"
-        sudo journalctl -u $SERVICE_NAME -f
+        journalctl -u $SERVICE_NAME -f
         ;;
     enable)
         check_root
@@ -100,8 +102,12 @@ case "$1" in
         # Create the application directory
         mkdir -p /opt/guestbook-kiosk
 
-        # Copy the application
-        cp -r . /opt/guestbook-kiosk/
+        # Copy only the built application and necessary assets
+        cp -r src-tauri/target/release/guestbook-tauri-ts /opt/guestbook-kiosk/
+        cp -r dist /opt/guestbook-kiosk/
+        cp -r public /opt/guestbook-kiosk/
+        cp -r appliance-setup /opt/guestbook-kiosk/
+        cp README.md /opt/guestbook-kiosk/
         chown -R $SUDO_USER:$SUDO_USER /opt/guestbook-kiosk/
 
         # Create systemd service file
