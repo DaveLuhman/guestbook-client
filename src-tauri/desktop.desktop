@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=Guestbook Kiosk Client
 Comment=A kiosk application for guest check-in using HID devices
-Exec=guestbook-tauri-ts
+Exec=env WEBKIT_DISABLE_COMPOSITING_MODE=1 guestbook-tauri-ts
 Icon=guestbook-tauri-ts
 Terminal=false
 Type=Application
