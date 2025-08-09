@@ -5,6 +5,18 @@
 
 set -e  # Exit on any error
 
+# Check OS type
+if [ "$(uname -s)" != "Linux" ]; then
+    echo "❌ Unsupported OS: This script only supports Linux systems."
+    exit 1
+fi
+
+# Check for apt availability
+if ! command -v apt &> /dev/null; then
+    echo "❌ 'apt' package manager not found. This script only supports Debian/Ubuntu-based systems with 'apt'."
+    exit 1
+fi
+
 echo "🚀 Installing Tauri dependencies for Linux..."
 
 # Update package list
