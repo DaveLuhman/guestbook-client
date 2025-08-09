@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Guestbook Kiosk Client
+Comment=A kiosk application for guest check-in using HID devices
+Exec=guestbook-tauri-ts
+Icon=guestbook-tauri-ts
+Terminal=false
+Type=Application
+Categories=Utility;System;
+StartupNotify=true
+StartupWMClass=guestbook-tauri-ts

@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "first-run": "node appliance-setup/setup-wrapper.js first-run",
+    "build:arm64": "node appliance-setup/setup-wrapper.js build-arm64"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
