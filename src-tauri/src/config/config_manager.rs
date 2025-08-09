@@ -121,7 +121,6 @@ impl ConfigManager {
     pub fn set_server_token(&self, server_token: String) {
         self.set(server_token, |c, v| c.server_token = Some(v));
     }
-
 }
 
 // Optionally, you can provide a global singleton instance using lazy_static or once_cell
@@ -129,6 +128,5 @@ impl ConfigManager {
 #[tauri::command]
 pub fn get_full_config(config_manager: State<'_, ConfigManager>) -> Config {
     let config = config_manager.config.lock().unwrap().clone();
-    println!("Config: {:?}", config);
     config
 }
