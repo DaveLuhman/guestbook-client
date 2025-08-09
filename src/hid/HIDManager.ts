@@ -6,8 +6,7 @@ import { type swipeData, updateSwipeData } from './magstripReader';
 const entryDataEl = document.querySelector('#entry-data');
 
 if (entryDataEl) {
-  entryDataEl.textContent =
-    'Swipe your card, scan your barcode to record an entry...';
+  entryDataEl.innerHTML = '<p>Swipe your card, scan your barcode to record an entry...</p>';
 }
 
 const resetEntryData = () => {
