@@ -25,7 +25,81 @@ const CONFIG = {
 };
 
 // Utility functions
-function isWindows() {
+// 1. Replace the three isXxx() helpers with a single lookup:
+- function isWindows() { return os.platform() === 'win32'; }
+- function isLinux()   { return os.platform() === 'linux'; }
+- function isMac()     { return os.platform() === 'darwin'; }
++ const PLATFORM = os.platform();
++ const IS = {
++   windows: PLATFORM === 'win32',
++   linux:   PLATFORM === 'linux',
++   mac:     PLATFORM === 'darwin',
++ };
+
+// Then replace calls like `isLinux() || isMac()` with `IS.linux || IS.mac`
+// and `isWindows()` with `IS.windows`
+
+// 2. Unify the redundant `cargo build` calls into one:
+-function buildApplication() {
+-  console.log('🔨 Building application...');
+-
+-  if (!runCommand('npm run build')) return false;
+-
+-  // Build Rust backend
+-  if (isLinux() || isMac()) {
+-    if (!runCommand('cd src-tauri && cargo build --release && cd ..')) {
+-      return false;
+-    }
+-  } else if (isWindows()) {
+-    if (!runCommand('cd src-tauri && cargo build --release && cd ..')) {
+-      return false;
+-    }
+-  }
+-
+-  return true;
+-}
++function buildApplication() {
++  console.log('🔨 Building application...');
++  if (!runCommand('npm run build')) return false;
++  // unified Rust build for all platforms
++  if (!runCommand('cd src-tauri && cargo build --release && cd ..')) {
++    return false;
++  }
++  return true;
++}
+
+// 3. Swap the switch/case for a simple command‐to‐handler map:
+- switch (command) {
+-   case 'first-run':
+-     // ...
+-   case 'build-arm64':
+-     // ...
+-   default:
+-     // usage
+- }
++const COMMANDS = {
++  'first-run': () => {
++    [ checkPrerequisites, installDependencies, buildApplication, setupLinuxService ]
++      .every(fn => fn()) || process.exit(1);
++    showNextSteps();
++  },
++  'build-arm64': () => {
++    if (!IS.linux) {
++      console.error('❌ ARM64 build is only supported on Linux');
++      process.exit(1);
++    }
++    [ checkPrerequisites, installDependencies, buildApplication ]
++      .every(fn => fn()) || process.exit(1);
++    console.log('✅ ARM64 build complete');
++  }
++};
++
++const handler = COMMANDS[command];
++if (!handler) {
++  console.log(`Usage: node setup-wrapper.js <command>\nCommands: first-run, build-arm64`);
++  process.exit(1);
++}
++handler();
     return os.platform() === 'win32';
 }
 
