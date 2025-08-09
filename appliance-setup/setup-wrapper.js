@@ -173,11 +173,10 @@ function buildApplication() {
         if (!runCommand('cd src-tauri && cargo build --release && cd ..')) {
             return false;
         }
-    } else if (isWindows()) {
-        if (!runCommand('cd src-tauri && cargo build --release && cd ..')) {
-            return false;
-        }
-    }
+    } else if (isWindows() && !runCommand('cd src-tauri && cargo build --release && cd ..')) {
+                 return false;
+           }
+
 
     return true;
 }
