@@ -240,7 +240,12 @@ Environment=DISPLAY=:0
 [Install]
 WantedBy=multi-user.target`;
 
-    fs.writeFileSync(`/etc/systemd/system/${CONFIG.serviceName}.service`, serviceContent);
+    try {
+        fs.writeFileSync(`/etc/systemd/system/${CONFIG.serviceName}.service`, serviceContent);
+    } catch (err) {
+        console.error(`❌ Failed to write systemd service file: ${err.message}`);
+        return false;
+    }
 
     // Enable service
     runCommand('systemctl daemon-reload');
