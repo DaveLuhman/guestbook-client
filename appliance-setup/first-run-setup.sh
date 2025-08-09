@@ -36,7 +36,19 @@ cargo build --release
 cd ..
 
 echo "🚀 Configuring auto-start on boot..."
-# Create the application directory if it doesn't exist
+
+# Determine the correct user for ownership
+TARGET_USER=${SUDO_USER:-$USER}
+if [ "$TARGET_USER" = "root" ]; then
+    echo "❌ Error: Cannot determine target user. Please run this script as a regular user with sudo."
+    exit 1
+fi
+
+# Clear existing installation to ensure clean state
+echo "🧹 Clearing existing installation..."
+sudo rm -rf /opt/guestbook-kiosk
+
+# Create the application directory
 sudo mkdir -p /opt/guestbook-kiosk
 
 # Copy only the built application and necessary assets to /opt/guestbook-kiosk/
@@ -46,7 +58,7 @@ sudo cp -r dist /opt/guestbook-kiosk/
 sudo cp -r public /opt/guestbook-kiosk/
 sudo cp -r appliance-setup /opt/guestbook-kiosk/
 sudo cp README.md /opt/guestbook-kiosk/
-sudo chown -R $USER:$USER /opt/guestbook-kiosk/
+sudo chown -R $TARGET_USER:$TARGET_USER /opt/guestbook-kiosk/
 
 # Create systemd service file
 echo "⚙️ Creating systemd service..."
@@ -58,7 +70,7 @@ Wants=network.target
 
 [Service]
 Type=simple
-User=$USER
+User=$TARGET_USER
 WorkingDirectory=/opt/guestbook-kiosk
 ExecStart=/opt/guestbook-kiosk/src-tauri/target/release/guestbook-tauri-ts
 Restart=always

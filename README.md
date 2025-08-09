@@ -60,6 +60,8 @@ This command will:
 - Configure auto-start on boot (Linux only)
 - Set up the application as a system service
 
+> **Note:** The setup script is now cross-platform compatible and will automatically detect your operating system. On Linux, it will prompt for sudo privileges when needed.
+
 ### 3. Manual Setup (Alternative)
 ```bash
 # Install Node.js dependencies
@@ -149,8 +151,9 @@ guestbook-client/
 │   │   └── devices/       # Device integration
 │   └── Cargo.toml         # Rust dependencies
 ├── appliance-setup/        # Setup and deployment scripts
+│   ├── setup-wrapper.js         # Cross-platform setup wrapper
 │   ├── install-tauri-deps.sh    # Linux dependency installer
-│   ├── first-run-setup.sh       # First-time setup script
+│   ├── first-run-setup.sh       # Linux first-time setup script
 │   ├── first-run-setup.bat      # Windows setup script
 │   ├── manage-service.sh        # Service management script
 │   └── build-arm64-debian.sh    # ARM64 Debian package builder
@@ -254,7 +257,7 @@ npm run tauri build -- --target x86_64-apple-darwin
 For deploying to ARM64 kiosk devices (like Raspberry Pi):
 
 ```bash
-# Build ARM64 Debian package
+# Build ARM64 Debian package (Linux only)
 npm run build:arm64
 ```
 
@@ -263,6 +266,8 @@ This creates a `.deb` package optimized for ARM64 Debian-based systems with:
 - Desktop integration (menu entry, icons)
 - System dependencies (webkitgtk, gtk, appindicator)
 - Setup scripts included in `/usr/share/guestbook-kiosk/`
+
+> **Note:** ARM64 builds are only supported on Linux systems due to cross-compilation requirements.
 
 **Installation:**
 ```bash
@@ -299,6 +304,12 @@ Built applications are available in `src-tauri/target/release/`:
 - Check service status: `sudo ./appliance-setup/manage-service.sh status`
 - View service logs: `sudo ./appliance-setup/manage-service.sh logs`
 - Ensure auto-start is enabled: `sudo ./appliance-setup/manage-service.sh enable`
+- Re-run setup if needed: `sudo npm run first-run`
+
+**Setup Issues**
+- Ensure you're running as a regular user (not root) when using `npm run first-run`
+- On Linux, the script will prompt for sudo when needed
+- If Rust is not found, run: `./appliance-setup/install-tauri-deps.sh`
 
 ### Logs
 Application logs are available in:

@@ -99,6 +99,17 @@ case "$1" in
             exit 1
         fi
 
+        # Determine the correct user for ownership
+        TARGET_USER=${SUDO_USER:-$(logname 2>/dev/null || echo $USER)}
+        if [ "$TARGET_USER" = "root" ] || [ -z "$TARGET_USER" ]; then
+            echo "❌ Error: Cannot determine target user. Please run this script as a regular user with sudo."
+            exit 1
+        fi
+
+        # Clear existing installation to ensure clean state
+        echo "🧹 Clearing existing installation..."
+        rm -rf /opt/guestbook-kiosk
+
         # Create the application directory
         mkdir -p /opt/guestbook-kiosk
 
@@ -108,7 +119,7 @@ case "$1" in
         cp -r public /opt/guestbook-kiosk/
         cp -r appliance-setup /opt/guestbook-kiosk/
         cp README.md /opt/guestbook-kiosk/
-        chown -R $SUDO_USER:$SUDO_USER /opt/guestbook-kiosk/
+        chown -R $TARGET_USER:$TARGET_USER /opt/guestbook-kiosk/
 
         # Create systemd service file
         tee /etc/systemd/system/$SERVICE_NAME.service > /dev/null <<EOF
@@ -119,7 +130,7 @@ Wants=network.target
 
 [Service]
 Type=simple
-User=$SUDO_USER
+User=$TARGET_USER
 WorkingDirectory=/opt/guestbook-kiosk
 ExecStart=/opt/guestbook-kiosk/src-tauri/target/release/guestbook-tauri-ts
 Restart=always

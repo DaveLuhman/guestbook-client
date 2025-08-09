@@ -39,9 +39,9 @@ if errorlevel 1 (
 
 echo 🔧 Building Rust dependencies...
 cd src-tauri
-call cargo build
+call cargo build --release
 if errorlevel 1 (
-    echo ❌ Error: cargo build failed.
+    echo ❌ Error: cargo build --release failed.
     cd ..
     pause
     exit /b 1

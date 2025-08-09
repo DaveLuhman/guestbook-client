@@ -28,7 +28,8 @@ sudo apt install -y \
 if ! command -v rustc &> /dev/null; then
     echo "🦀 Installing Rust..."
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    source ~/.cargo/env
+    echo "ℹ️ Please restart your shell or log out and back in to update your environment for Rust (cargo) commands."
+    echo "💡 Alternatively, run: source ~/.cargo/env"
 else
     echo "✅ Rust is already installed"
 fi
