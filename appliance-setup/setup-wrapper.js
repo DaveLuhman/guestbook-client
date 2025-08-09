@@ -67,13 +67,12 @@ function checkPrerequisites() {
     }
 
     // Check Rust (only on Linux/Mac)
-    if (isLinux() || isMac()) {
-        if (!runCommand('cargo --version', { stdio: 'pipe' })) {
-            console.error('❌ Rust is not installed');
-            console.log('💡 Run: ./appliance-setup/install-tauri-deps.sh');
-            return false;
-        }
+    if ((isLinux() || isMac()) && !runCommand('cargo --version', { stdio: 'pipe' })) {
+          console.error('❌ Rust is not installed');
+          console.log('💡 Run: ./appliance-setup/install-tauri-deps.sh');
+          return false;
     }
+
 
     console.log('✅ Prerequisites check passed');
     return true;
