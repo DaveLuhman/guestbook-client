@@ -11,6 +11,25 @@ if not exist "package.json" (
     exit /b 1
 )
 
+REM Check for required subdirectories and files
+if not exist "src-tauri\" (
+    echo ❌ Error: Required directory 'src-tauri' not found. Please ensure you are in the project root and all files are present.
+    pause
+    exit /b 1
+)
+if not exist "dist\" (
+    echo ❌ Error: Required directory 'dist' not found. Please ensure you are in the project root and all files are present.
+    pause
+    exit /b 1
+)
+REM Add more checks below if other directories/files are required
+REM Example:
+REM if not exist "some-other-dir\" (
+REM     echo ❌ Error: Required directory 'some-other-dir' not found.
+REM     pause
+REM     exit /b 1
+REM )
+
 REM Check if Node.js is installed
 node --version >nul 2>&1
 if errorlevel 1 (
