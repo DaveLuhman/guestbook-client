@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "first-run": "node -e \"require('child_process').execSync(process.platform === 'win32' ? 'appliance setup/first-run-setup.bat' : 'chmod +x \\\"appliance setup/first-run-setup.sh\\\" && \\\"appliance setup/first-run-setup.sh\\\"', {stdio: 'inherit'})\"",
+    "build:arm64": "chmod +x \"appliance setup/build-arm64-debian.sh\" && \"appliance setup/build-arm64-debian.sh\""
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
