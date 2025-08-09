@@ -36,7 +36,14 @@ fi
 
 # Set up cross-compilation environment
 echo "🔧 Setting up cross-compilation environment..."
-export PKG_CONFIG_SYSROOT_DIR=/usr/aarch64-linux-gnu/
+if [ -d "/usr/aarch64-linux-gnu/" ]; then
+    export PKG_CONFIG_SYSROOT_DIR=/usr/aarch64-linux-gnu/
+else
+    echo "⚠️  /usr/aarch64-linux-gnu/ does not exist. PKG_CONFIG_SYSROOT_DIR will not be set."
+    echo "   Please install the necessary cross-compilation toolchain and libraries for aarch64."
+    # Uncomment the next line to create the directory automatically (if desired):
+    # sudo mkdir -p /usr/aarch64-linux-gnu/
+fi
 export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
 export CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++
 
