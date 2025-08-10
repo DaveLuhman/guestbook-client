@@ -76,7 +76,6 @@ function initializeMenu() {
   manualEntryBtn?.addEventListener('click', () => {
     console.log('Manual Entry clicked');
     soundManager.playBeep(700, 120);
-    // TODO: Implement manual entry functionality
     closeMenu();
   });
 
@@ -212,9 +211,12 @@ function showEntrySuccess() {
   const entryData = document.getElementById('entry-data');
   if (entryData) {
     entryData.innerHTML = '<p>Entry submitted successfully!</p>';
+    // Change screen color to green for success
+    document.body.style.backgroundColor = 'green';
     // Reset after 3 seconds
     setTimeout(() => {
       entryData.innerHTML = '<p>Swipe your card or scan your barcode to record an entry...</p>';
+      document.body.style.backgroundColor = '#00447c';
     }, 3000);
   }
 }
@@ -224,9 +226,12 @@ function showEntryError() {
   const entryData = document.getElementById('entry-data');
   if (entryData) {
     entryData.innerHTML = '<p>Error submitting entry. Please try again.</p>';
+    // Change screen color to red for error
+    document.body.style.backgroundColor = '#cc0000';
     // Reset after 3 seconds
     setTimeout(() => {
       entryData.innerHTML = '<p>Swipe your card or scan your barcode to record an entry...</p>';
+      document.body.style.backgroundColor = '#00447c';
     }, 3000);
   }
 }

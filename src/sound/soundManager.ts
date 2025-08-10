@@ -14,7 +14,7 @@ export class SoundManager {
       this.gainNode = this.audioContext.createGain();
       this.gainNode.connect(this.audioContext.destination);
       this.gainNode.gain.value = 0.3; // Set volume to 30%
-    } catch (error) {
+    } catch (_error) {
       console.warn('Audio context not supported, sounds will be disabled');
     }
   }
