@@ -212,3 +212,174 @@ h1 {
     min-height: 50px;
   }
 }
+
+/* Manual Entry Modal Styles */
+.manual-entry-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.manual-entry-modal.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.manual-entry-content {
+  background-color: #00447c;
+  border: 3px solid white;
+  border-radius: 15px;
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 400px;
+  max-width: 500px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  transform: scale(0.8);
+  transition: transform 0.3s ease;
+}
+
+.manual-entry-modal.active .manual-entry-content {
+  transform: scale(1);
+}
+
+.manual-entry-content h2 {
+  text-align: center;
+  margin: 0 0 20px 0;
+  font-size: clamp(32px, 4vw, 48px);
+  color: white;
+}
+
+.input-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.input-section label {
+  font-size: clamp(20px, 2.5vw, 24px);
+  font-weight: 600;
+  color: white;
+}
+
+.input-section input {
+  padding: 15px;
+  font-size: clamp(24px, 3vw, 28px);
+  border: 2px solid white;
+  border-radius: 10px;
+  background-color: #0066cc;
+  color: white;
+  text-align: center;
+  font-family: 'Poppins', sans-serif;
+}
+
+.input-section input::placeholder {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.numberpad {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 20px 0;
+}
+
+.numberpad-row {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.num-btn {
+  width: 80px;
+  height: 80px;
+  background-color: #0066cc;
+  color: white;
+  border: 2px solid white;
+  border-radius: 10px;
+  font-size: clamp(24px, 3vw, 28px);
+  font-weight: 600;
+  font-family: 'Poppins', sans-serif;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.num-btn:hover {
+  background-color: #0088ff;
+  transform: translateY(-2px);
+}
+
+.num-btn:active {
+  transform: translateY(0);
+  background-color: #0055aa;
+}
+
+.clear-btn {
+  background-color: #cc6600;
+}
+
+.clear-btn:hover {
+  background-color: #ff8800;
+}
+
+.submit-btn {
+  background-color: #00cc66;
+}
+
+.submit-btn:hover {
+  background-color: #00ff88;
+}
+
+.close-btn {
+  background-color: #cc0000;
+  color: white;
+  border: 2px solid white;
+  border-radius: 10px;
+  padding: 15px 30px;
+  font-size: clamp(20px, 2.5vw, 24px);
+  font-weight: 600;
+  font-family: 'Poppins', sans-serif;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+  align-self: center;
+}
+
+.close-btn:hover {
+  background-color: #ff0000;
+  transform: translateY(-2px);
+}
+
+.close-btn:active {
+  transform: translateY(0);
+  background-color: #aa0000;
+}
+
+/* Responsive adjustments for manual entry */
+@media screen and (max-width: 1200px) {
+  .manual-entry-content {
+    padding: 30px;
+    min-width: 350px;
+    max-width: 450px;
+  }
+
+  .num-btn {
+    width: 70px;
+    height: 70px;
+    font-size: clamp(20px, 2.5vw, 24px);
+  }
+
+  .numberpad-row {
+    gap: 8px;
+  }
+}
