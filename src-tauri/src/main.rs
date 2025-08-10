@@ -74,6 +74,19 @@ async fn submit_barcode_entry(
         .unwrap();
     Ok(())
 }
+
+#[tauri::command]
+async fn submit_manual_entry(
+    config_manager: tauri::State<'_, ConfigManager>,
+    onecard: String,
+) -> Result<(), String> {
+    let name = "Manual Entry".to_string();
+    submit_entry(config_manager, CardData { name, onecard })
+        .await
+        .unwrap();
+    Ok(())
+}
+
 #[tauri::command]
 async fn first_run_trigger(app: tauri::AppHandle) {
     let main_window = app.get_webview_window("main").unwrap();
@@ -141,6 +154,7 @@ fn main() {
             send_heartbeat_command,
             submit_swipe_entry,
             submit_barcode_entry,
+            submit_manual_entry,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tauri application");

@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { startHIDManager } from './hid/HIDManager';
+import { soundManager } from './sound/soundManager';
 
 interface config {
   server_url: string;
@@ -13,6 +14,10 @@ interface config {
 // Menu state management
 let menuPressTimer: NodeJS.Timeout | null = null;
 let isMenuOpen = false;
+
+// Manual entry state management
+let isManualEntryOpen = false;
+let currentOneCardInput = '';
 
 // Menu functionality
 function initializeMenu() {
@@ -70,18 +75,20 @@ function initializeMenu() {
   // Button handlers
   manualEntryBtn?.addEventListener('click', () => {
     console.log('Manual Entry clicked');
-    // TODO: Implement manual entry functionality
+    soundManager.playBeep(700, 120);
     closeMenu();
   });
 
   showConfigBtn?.addEventListener('click', () => {
     console.log('Show Config clicked');
+    soundManager.playBeep(700, 120);
     // TODO: Implement config display functionality
     closeMenu();
   });
 
   restartApplianceBtn?.addEventListener('click', () => {
     console.log('Restart Appliance clicked');
+    soundManager.playBeep(700, 120);
     // TODO: Implement restart functionality
     closeMenu();
   });
@@ -100,6 +107,132 @@ function closeMenu() {
   if (menuModal && isMenuOpen) {
     isMenuOpen = false;
     menuModal.classList.remove('active');
+  }
+}
+
+// Manual entry functionality
+function initializeManualEntry() {
+  const manualEntryBtn = document.getElementById('manual-entry-btn');
+  const manualEntryModal = document.getElementById('manual-entry-modal');
+  const closeManualBtn = document.getElementById('close-manual-btn');
+  const numBtns = document.querySelectorAll('.num-btn[data-number]');
+  const clearBtn = document.getElementById('clear-btn');
+  const submitManualBtn = document.getElementById('submit-manual-btn');
+  const oneCardInput = document.getElementById('manual-onecard') as HTMLInputElement;
+
+  if (!manualEntryBtn || !manualEntryModal || !closeManualBtn) return;
+
+  // Open manual entry modal
+  manualEntryBtn.addEventListener('click', () => {
+    openManualEntry();
+    closeMenu();
+  });
+
+  // Close manual entry modal
+  closeManualBtn.addEventListener('click', () => {
+    closeManualEntry();
+  });
+
+  // Close when clicking outside
+  manualEntryModal.addEventListener('click', (e) => {
+    if (e.target === manualEntryModal) {
+      closeManualEntry();
+    }
+  });
+
+  // Number button functionality
+  numBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const number = (btn as HTMLElement).getAttribute('data-number');
+      if (number && currentOneCardInput.length < 7) {
+        currentOneCardInput += number;
+        oneCardInput.value = currentOneCardInput;
+        soundManager.playNumberBeep();
+      }
+    });
+  });
+
+  // Clear button functionality
+  clearBtn?.addEventListener('click', () => {
+    currentOneCardInput = '';
+    oneCardInput.value = '';
+    soundManager.playBeep(500, 100);
+  });
+
+  // Submit button functionality
+  submitManualBtn?.addEventListener('click', async () => {
+    if (currentOneCardInput.trim()) {
+      try {
+        await invoke('submit_manual_entry', { onecard: currentOneCardInput });
+        // Show success message
+        soundManager.playSuccess();
+        showEntrySuccess();
+        closeManualEntry();
+      } catch (error) {
+        console.error('Manual entry submission failed:', error);
+        // Show error message
+        soundManager.playError();
+        showEntryError();
+      }
+    }
+  });
+}
+
+function openManualEntry() {
+  const manualEntryModal = document.getElementById('manual-entry-modal');
+  if (manualEntryModal && !isManualEntryOpen) {
+    isManualEntryOpen = true;
+    manualEntryModal.classList.add('active');
+    // Reset input
+    currentOneCardInput = '';
+    const oneCardInput = document.getElementById('manual-onecard') as HTMLInputElement;
+    if (oneCardInput) {
+      oneCardInput.value = '';
+    }
+  }
+}
+
+function closeManualEntry() {
+  const manualEntryModal = document.getElementById('manual-entry-modal');
+  if (manualEntryModal && isManualEntryOpen) {
+    isManualEntryOpen = false;
+    manualEntryModal.classList.remove('active');
+    // Reset input
+    currentOneCardInput = '';
+    const oneCardInput = document.getElementById('manual-onecard') as HTMLInputElement;
+    if (oneCardInput) {
+      oneCardInput.value = '';
+    }
+  }
+}
+
+function showEntrySuccess() {
+  // Update the main display to show success
+  const entryData = document.getElementById('entry-data');
+  if (entryData) {
+    entryData.innerHTML = '<p>Entry submitted successfully!</p>';
+    // Change screen color to green for success
+    document.body.style.backgroundColor = 'green';
+    // Reset after 3 seconds
+    setTimeout(() => {
+      entryData.innerHTML = '<p>Swipe your card or scan your barcode to record an entry...</p>';
+      document.body.style.backgroundColor = '#00447c';
+    }, 3000);
+  }
+}
+
+function showEntryError() {
+  // Update the main display to show error
+  const entryData = document.getElementById('entry-data');
+  if (entryData) {
+    entryData.innerHTML = '<p>Error submitting entry. Please try again.</p>';
+    // Change screen color to red for error
+    document.body.style.backgroundColor = '#cc0000';
+    // Reset after 3 seconds
+    setTimeout(() => {
+      entryData.innerHTML = '<p>Swipe your card or scan your barcode to record an entry...</p>';
+      document.body.style.backgroundColor = '#00447c';
+    }, 3000);
   }
 }
 
@@ -130,6 +263,7 @@ async function scheduleHeartbeat() {
 
   // Initialize menu functionality
   initializeMenu();
+  initializeManualEntry(); // Initialize manual entry functionality
 
   // Heartbeat cron task: every 10 +/- 5 minutes
   scheduleHeartbeat();

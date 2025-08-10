@@ -6,6 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="msapplication-config" content="none">
   <link rel="stylesheet" type="text/css" href="/src/styles.css">
+  <link rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=close" />
   <script type="module" src="/src/main.ts" defer></script>
 </head>
 
@@ -33,6 +35,46 @@
       <button class="menu-button" id="manual-entry-btn">Manual Entry</button>
       <button class="menu-button" id="show-config-btn">Show Config</button>
       <button class="menu-button" id="restart-appliance-btn">Restart Appliance</button>
+    </div>
+  </div>
+
+  <!-- Manual Entry Modal -->
+  <div class="manual-entry-modal" id="manual-entry-modal">
+    <div class="manual-entry-content">
+      <div class="modal-header">
+        <h2>Manual Entry</h2>
+        <button class="close-x-btn" id="close-manual-btn"><span class="material-symbols-outlined">
+            close
+          </span></button>
+      </div>
+      <div class="input-section">
+        <label for="manual-onecard">OneCard Number:</label>
+        <input type="text" id="manual-onecard" placeholder="Enter OneCard number" maxlength="7" readonly>
+      </div>
+      <div class="numberpad">
+        <div class="numberpad-row">
+          <button class="num-btn" data-number="1">1</button>
+          <button class="num-btn" data-number="2">2</button>
+          <button class="num-btn" data-number="3">3</button>
+        </div>
+        <div class="numberpad-row">
+          <button class="num-btn" data-number="4">4</button>
+          <button class="num-btn" data-number="5">5</button>
+          <button class="num-btn" data-number="6">6</button>
+        </div>
+        <div class="numberpad-row">
+          <button class="num-btn" data-number="7">7</button>
+          <button class="num-btn" data-number="8">8</button>
+          <button class="num-btn" data-number="9">9</button>
+        </div>
+        <div class="numberpad-row">
+          <button class="num-btn" data-number="0">0</button>
+        </div>
+        <div class="action-buttons">
+          <button class="action-btn clear-btn" id="clear-btn">Clear</button>
+          <button class="action-btn submit-btn" id="submit-manual-btn">Submit</button>
+        </div>
+      </div>
     </div>
   </div>
 </body>
