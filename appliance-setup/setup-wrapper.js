@@ -5,10 +5,9 @@
  * Consolidates setup logic and provides better platform compatibility
  */
 
-const { execSync, spawn } = require('child_process');
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+import { execSync } from 'node:child_process';
+import { existsSync, writeFileSync } from 'node:fs';
+import { platform } from 'node:os';
 
 // Configuration
 const CONFIG = {
@@ -24,93 +23,15 @@ const CONFIG = {
     ]
 };
 
+// Platform detection
+const PLATFORM = platform();
+const IS = {
+    windows: PLATFORM === 'win32',
+    linux: PLATFORM === 'linux',
+    mac: PLATFORM === 'darwin',
+};
+
 // Utility functions
-// 1. Replace the three isXxx() helpers with a single lookup:
-- function isWindows() { return os.platform() === 'win32'; }
-- function isLinux()   { return os.platform() === 'linux'; }
-- function isMac()     { return os.platform() === 'darwin'; }
-+ const PLATFORM = os.platform();
-+ const IS = {
-+   windows: PLATFORM === 'win32',
-+   linux:   PLATFORM === 'linux',
-+   mac:     PLATFORM === 'darwin',
-+ };
-
-// Then replace calls like `isLinux() || isMac()` with `IS.linux || IS.mac`
-// and `isWindows()` with `IS.windows`
-
-// 2. Unify the redundant `cargo build` calls into one:
--function buildApplication() {
--  console.log('🔨 Building application...');
--
--  if (!runCommand('npm run build')) return false;
--
--  // Build Rust backend
--  if (isLinux() || isMac()) {
--    if (!runCommand('cd src-tauri && cargo build --release && cd ..')) {
--      return false;
--    }
--  } else if (isWindows()) {
--    if (!runCommand('cd src-tauri && cargo build --release && cd ..')) {
--      return false;
--    }
--  }
--
--  return true;
--}
-+function buildApplication() {
-+  console.log('🔨 Building application...');
-+  if (!runCommand('npm run build')) return false;
-+  // unified Rust build for all platforms
-+  if (!runCommand('cd src-tauri && cargo build --release && cd ..')) {
-+    return false;
-+  }
-+  return true;
-+}
-
-// 3. Swap the switch/case for a simple command‐to‐handler map:
-- switch (command) {
--   case 'first-run':
--     // ...
--   case 'build-arm64':
--     // ...
--   default:
--     // usage
-- }
-+const COMMANDS = {
-+  'first-run': () => {
-+    [ checkPrerequisites, installDependencies, buildApplication, setupLinuxService ]
-+      .every(fn => fn()) || process.exit(1);
-+    showNextSteps();
-+  },
-+  'build-arm64': () => {
-+    if (!IS.linux) {
-+      console.error('❌ ARM64 build is only supported on Linux');
-+      process.exit(1);
-+    }
-+    [ checkPrerequisites, installDependencies, buildApplication ]
-+      .every(fn => fn()) || process.exit(1);
-+    console.log('✅ ARM64 build complete');
-+  }
-+};
-+
-+const handler = COMMANDS[command];
-+if (!handler) {
-+  console.log(`Usage: node setup-wrapper.js <command>\nCommands: first-run, build-arm64`);
-+  process.exit(1);
-+}
-+handler();
-    return os.platform() === 'win32';
-}
-
-function isLinux() {
-    return os.platform() === 'linux';
-}
-
-function isMac() {
-    return os.platform() === 'darwin';
-}
-
 function runCommand(command, options = {}) {
     console.log(`🔄 Running: ${command}`);
     try {
@@ -119,7 +40,7 @@ function runCommand(command, options = {}) {
             ...options
         });
         return true;
-    } catch (error) {
+    } catch {
         console.error(`❌ Command failed: ${command}`);
         return false;
     }
@@ -141,12 +62,11 @@ function checkPrerequisites() {
     }
 
     // Check Rust (only on Linux/Mac)
-    if ((isLinux() || isMac()) && !runCommand('cargo --version', { stdio: 'pipe' })) {
-          console.error('❌ Rust is not installed');
-          console.log('💡 Run: ./appliance-setup/install-tauri-deps.sh');
-          return false;
+    if ((IS.linux || IS.mac) && !runCommand('cargo --version', { stdio: 'pipe' })) {
+        console.error('❌ Rust is not installed');
+        console.log('💡 Run: ./appliance-setup/install-tauri-deps.sh');
+        return false;
     }
-
 
     console.log('✅ Prerequisites check passed');
     return true;
@@ -162,27 +82,17 @@ function installDependencies() {
 
 function buildApplication() {
     console.log('🔨 Building application...');
+    if (!runCommand('npm run build')) return false;
 
-    // Build frontend
-    if (!runCommand('npm run build')) {
+    // Unified Rust build for all platforms
+    if (!runCommand('cd src-tauri && cargo build --release && cd ..')) {
         return false;
     }
-
-    // Build Rust backend
-    if (isLinux() || isMac()) {
-        if (!runCommand('cd src-tauri && cargo build --release && cd ..')) {
-            return false;
-        }
-    } else if (isWindows() && !runCommand('cd src-tauri && cargo build --release && cd ..')) {
-                 return false;
-           }
-
-
     return true;
 }
 
 function setupLinuxService() {
-    if (!isLinux()) {
+    if (!IS.linux) {
         console.log('ℹ️ Linux service setup skipped (not on Linux)');
         return true;
     }
@@ -212,7 +122,7 @@ function setupLinuxService() {
 
     // Copy files
     CONFIG.requiredFiles.forEach(file => {
-        if (fs.existsSync(file)) {
+        if (existsSync(file)) {
             runCommand(`cp -r ${file} ${CONFIG.installPath}/`);
         } else {
             console.warn(`⚠️ Warning: ${file} not found`);
@@ -241,7 +151,7 @@ Environment=DISPLAY=:0
 WantedBy=multi-user.target`;
 
     try {
-        fs.writeFileSync(`/etc/systemd/system/${CONFIG.serviceName}.service`, serviceContent);
+        writeFileSync(`/etc/systemd/system/${CONFIG.serviceName}.service`, serviceContent);
     } catch (err) {
         console.error(`❌ Failed to write systemd service file: ${err.message}`);
         return false;
@@ -259,7 +169,7 @@ function showNextSteps() {
     console.log('\n🎉 Setup complete!');
     console.log('\n📋 Next steps:');
 
-    if (isLinux()) {
+    if (IS.linux) {
         console.log('1. Restart your shell or run: source ~/.cargo/env');
         console.log('2. Start the service: sudo ./appliance-setup/manage-service.sh start');
         console.log('3. Check status: sudo ./appliance-setup/manage-service.sh status');
@@ -271,44 +181,43 @@ function showNextSteps() {
     console.log('\n🔗 For more information, see the README.md file');
 }
 
+// Command handlers
+const COMMANDS = {
+    'first-run': () => {
+        [checkPrerequisites, installDependencies, buildApplication, setupLinuxService]
+            .every(fn => fn()) || process.exit(1);
+        showNextSteps();
+    },
+    'build-arm64': () => {
+        if (!IS.linux) {
+            console.error('❌ ARM64 build is only supported on Linux');
+            process.exit(1);
+        }
+        [checkPrerequisites, installDependencies, buildApplication]
+            .every(fn => fn()) || process.exit(1);
+        console.log('✅ ARM64 build complete');
+    }
+};
+
 // Main execution
 function main() {
     const command = process.argv[2];
 
     console.log('🚀 Guestbook Kiosk Client Setup');
-    console.log(`📱 Platform: ${os.platform()}`);
+    console.log(`📱 Platform: ${PLATFORM}`);
     console.log('');
 
-    switch (command) {
-        case 'first-run':
-            console.log('🎯 Running first-run setup...');
-            if (!checkPrerequisites()) process.exit(1);
-            if (!installDependencies()) process.exit(1);
-            if (!buildApplication()) process.exit(1);
-            if (!setupLinuxService()) process.exit(1);
-            showNextSteps();
-            break;
-
-        case 'build-arm64':
-            if (!isLinux()) {
-                console.error('❌ ARM64 build is only supported on Linux');
-                process.exit(1);
-            }
-            console.log('🎯 Building ARM64 Debian package...');
-            if (!checkPrerequisites()) process.exit(1);
-            if (!installDependencies()) process.exit(1);
-            if (!buildApplication()) process.exit(1);
-            console.log('✅ ARM64 build complete');
-            break;
-
-        default:
-            console.log('Usage: node setup-wrapper.js <command>');
-            console.log('');
-            console.log('Commands:');
-            console.log('  first-run    Complete first-time setup');
-            console.log('  build-arm64  Build ARM64 Debian package (Linux only)');
-            process.exit(1);
+    const handler = COMMANDS[command];
+    if (!handler) {
+        console.log('Usage: node setup-wrapper.js <command>');
+        console.log('');
+        console.log('Commands:');
+        console.log('  first-run    Complete first-time setup');
+        console.log('  build-arm64  Build ARM64 Debian package (Linux only)');
+        process.exit(1);
     }
+
+    handler();
 }
 
 // Run if called directly
@@ -316,7 +225,7 @@ if (require.main === module) {
     main();
 }
 
-module.exports = {
+export default {
     checkPrerequisites,
     installDependencies,
     buildApplication,

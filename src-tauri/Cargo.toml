@@ -29,3 +29,4 @@ dirs = "6.0.0"
 directories = "6.0.0"
 tauri-plugin-http = "2"
 chrono = "0.4.41"
+tokio = { version = "1.0", features = ["time", "rt"] }

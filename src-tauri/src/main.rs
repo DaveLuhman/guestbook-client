@@ -185,7 +185,40 @@ async fn test_logging() -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+async fn restart_appliance(app: tauri::AppHandle) -> Result<(), String> {
+    log::info!("Restart appliance command received");
+
+    // Log the restart attempt
+    log::info!("Initiating application restart...");
+
+    // Use spawn to avoid blocking the current thread
+    tauri::async_runtime::spawn(async move {
+        // Small delay to ensure the response is sent back to the frontend
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        // Log the restart action
+        log::info!("Executing application restart...");
+
+        // Restart the application
+        app.restart();
+    });
+
+    Ok(())
+}
+
 fn main() {
+    // Set WebKitGTK compositing mode to disabled on Linux to prevent image artifacting
+    #[cfg(target_os = "linux")]
+    {
+        // Additional WebKitGTK settings for better Linux compatibility
+        std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+        std::env::set_var("WEBKIT_DISABLE_GPU_PROCESS", "1");
+
+        // Alternative approach: You could also modify window creation in tauri.conf.json
+        // to add "transparent: true" or other rendering hints if needed
+    }
+
     #[cfg(debug_assertions)] // only enable instrumentation in development builds
     let devtools = tauri_plugin_devtools::init();
 
@@ -215,6 +248,7 @@ fn main() {
             send_heartbeat_command,
             log_error,
             test_logging,
+            restart_appliance,
             submit_swipe_entry,
             submit_barcode_entry,
             submit_manual_entry,

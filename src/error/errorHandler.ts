@@ -33,11 +33,6 @@ export class ErrorHandler {
     listen('hid-error', (event) => {
       this.handleHIDError(event.payload as string);
     });
-
-    // Listen for general HID data that might indicate errors
-    listen('hid-data', (event) => {
-      this.handleHIDData(event.payload as string);
-    });
   }
 
   private handleHIDError(errorMessage: string) {
@@ -46,55 +41,61 @@ export class ErrorHandler {
       severity: this.determineErrorSeverity(errorMessage),
       message: errorMessage,
       timestamp: new Date(),
-      userActionable: false
+      userActionable: false,
     };
 
     this.logError(context);
     this.handleError(context);
   }
 
-  private handleHIDData(data: string) {
-    // Check if the data looks like an error or invalid input
-    if (data.includes('ERROR') || data.includes('FAIL') || data.length < 3) {
-      const context: ErrorContext = {
-        source: 'barcode', // Assume barcode for now
-        severity: 'low',
-        message: `Invalid HID data received: ${data}`,
-        timestamp: new Date(),
-        userActionable: false
-      };
-
-      this.logError(context);
-      // Don't play sounds for low-severity data errors
-    }
-  }
-
-  private determineErrorSource(errorMessage: string): 'barcode' | 'magtek' | 'keypad' | 'network' | 'system' {
+  private determineErrorSource(
+    errorMessage: string
+  ): 'barcode' | 'magtek' | 'keypad' | 'network' | 'system' {
     const lowerMessage = errorMessage.toLowerCase();
 
     if (lowerMessage.includes('barcode') || lowerMessage.includes('scanner')) {
       return 'barcode';
-    } else if (lowerMessage.includes('magtek') || lowerMessage.includes('swipe')) {
+    } else if (
+      lowerMessage.includes('magtek') ||
+      lowerMessage.includes('swipe')
+    ) {
       return 'magtek';
-    } else if (lowerMessage.includes('keypad') || lowerMessage.includes('button')) {
+    } else if (
+      lowerMessage.includes('keypad') ||
+      lowerMessage.includes('button')
+    ) {
       return 'keypad';
-    } else if (lowerMessage.includes('network') || lowerMessage.includes('http')) {
+    } else if (
+      lowerMessage.includes('network') ||
+      lowerMessage.includes('http')
+    ) {
       return 'network';
     } else {
       return 'system';
     }
   }
 
-  private determineErrorSeverity(errorMessage: string): 'low' | 'medium' | 'high' | 'critical' {
+  private determineErrorSeverity(
+    errorMessage: string
+  ): 'low' | 'medium' | 'high' | 'critical' {
     const lowerMessage = errorMessage.toLowerCase();
 
     if (lowerMessage.includes('timeout') || lowerMessage.includes('retry')) {
       return 'low';
-    } else if (lowerMessage.includes('not found') || lowerMessage.includes('disconnected')) {
+    } else if (
+      lowerMessage.includes('not found') ||
+      lowerMessage.includes('disconnected')
+    ) {
       return 'medium';
-    } else if (lowerMessage.includes('failed') || lowerMessage.includes('error')) {
+    } else if (
+      lowerMessage.includes('failed') ||
+      lowerMessage.includes('error')
+    ) {
       return 'high';
-    } else if (lowerMessage.includes('critical') || lowerMessage.includes('fatal')) {
+    } else if (
+      lowerMessage.includes('critical') ||
+      lowerMessage.includes('fatal')
+    ) {
       return 'critical';
     } else {
       return 'medium';
@@ -102,7 +103,9 @@ export class ErrorHandler {
   }
 
   private logError(context: ErrorContext) {
-    const logEntry = `[${context.timestamp.toISOString()}] [${context.severity.toUpperCase()}] [${context.source}] ${context.message}`;
+    const logEntry = `[${context.timestamp.toISOString()}] [${context.severity.toUpperCase()}] [${
+      context.source
+    }] ${context.message}`;
     console.error(logEntry);
 
     // Send to backend for file logging
@@ -110,8 +113,8 @@ export class ErrorHandler {
       level: context.severity,
       source: context.source,
       message: context.message,
-      timestamp: context.timestamp.toISOString()
-    }).catch(e => console.warn('Failed to log error to backend:', e));
+      timestamp: context.timestamp.toISOString(),
+    }).catch((e) => console.warn('Failed to log error to backend:', e));
   }
 
   private handleError(context: ErrorContext) {
@@ -122,7 +125,9 @@ export class ErrorHandler {
 
     // Check if we should be silent due to too many errors
     if (currentCount >= this.maxErrorsBeforeSilent) {
-      console.warn(`Suppressing ${context.source} error sounds due to high error count`);
+      console.warn(
+        `Suppressing ${context.source} error sounds due to high error count`
+      );
       return;
     }
 
@@ -165,15 +170,21 @@ export class ErrorHandler {
   private updateErrorDisplay(context: ErrorContext) {
     const entryData = document.getElementById('entry-data');
     if (entryData) {
-      const errorColor = this.getErrorColor(context.severity);
-      entryData.innerHTML = `<p style="color: ${errorColor};">Device Error: ${context.message}</p>`;
-      document.body.style.backgroundColor = errorColor;
+      // Use CSS classes instead of inline styles
+      const errorElement = document.createElement('p');
+      errorElement.className = `error-message ${context.severity}`;
+      errorElement.textContent = `Device Error: ${context.message}`;
+
+      // Clear and append the new element
+      entryData.innerHTML = '';
+      entryData.appendChild(errorElement);
+
+      // Don't change body background color - it makes text unreadable
 
       // Reset after 5 seconds
       setTimeout(() => {
-        if (entryData.innerHTML.includes('Device Error:')) {
+        if (entryData.querySelector('p')?.textContent?.includes('Device Error:')) {
           entryData.innerHTML = '<p>Swipe your card or scan your barcode to record an entry...</p>';
-          document.body.style.backgroundColor = '#00447C';
         }
       }, 5000);
     }
@@ -181,22 +192,31 @@ export class ErrorHandler {
 
   private getErrorColor(severity: string): string {
     switch (severity) {
-      case 'low': return '#FFA500'; // Orange
-      case 'medium': return '#FF8C00'; // Dark Orange
-      case 'high': return '#FF4500'; // Orange Red
-      case 'critical': return '#DC143C'; // Crimson
-      default: return '#FF8C00';
+      case 'low':
+        return '#FFA500'; // Orange
+      case 'medium':
+        return '#FF8C00'; // Dark Orange
+      case 'high':
+        return '#FF4500'; // Orange Red
+      case 'critical':
+        return '#DC143C'; // Crimson
+      default:
+        return '#FF8C00';
     }
   }
 
   // Public method to handle errors from other parts of the application
-  public handleApplicationError(source: string, message: string, severity: 'low' | 'medium' | 'high' | 'critical' = 'medium') {
+  public handleApplicationError(
+    source: string,
+    message: string,
+    severity: 'low' | 'medium' | 'high' | 'critical' = 'medium'
+  ) {
     const context: ErrorContext = {
-      source: source as any,
+      source: source as ErrorContext['source'],
       severity,
       message,
       timestamp: new Date(),
-      userActionable: true
+      userActionable: true,
     };
 
     this.logError(context);
