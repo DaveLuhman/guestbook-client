@@ -15,7 +15,7 @@ if (entryDataEl) {
 
 const resetEntryData = () => {
 	setTimeout(() => {
-		const body = document.body;
+		const {body} = document;
 		body.style.backgroundColor = "#00447C";
 		if (entryDataEl) {
 			entryDataEl.innerHTML = `<p>${defaultMessage}</p>`;
