@@ -92,8 +92,6 @@ function initializeMenu() {
     console.log('Restart Appliance clicked');
     soundManager.playBeep(700, 120);
 
-    if (!restartApplianceBtn) return;
-
     // Store original text for potential error recovery
     const originalText = restartApplianceBtn.textContent;
 
@@ -107,7 +105,6 @@ function initializeMenu() {
       console.log('Restart command sent successfully');
 
       // Show success feedback briefly before restart
-      restartApplianceBtn.textContent = 'Restarting...';
       restartApplianceBtn.style.backgroundColor = '#00aa00';
 
       // Note: The app will restart, so we don't need to close the menu
@@ -152,6 +149,38 @@ function openMenu() {
   if (menuModal && !isMenuOpen) {
     isMenuOpen = true;
     menuModal.classList.add('active');
+
+    // Focus management for accessibility
+    menuModal.focus();
+
+    // Trap focus within the modal
+    const focusableElements = menuModal.querySelectorAll('button, [tabindex]:not([tabindex="-1"])');
+    const firstElement = focusableElements[0] as HTMLElement;
+    const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
+
+    if (firstElement) {
+      firstElement.focus();
+    }
+
+    // Handle tab key navigation
+    menuModal.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Tab') {
+        if (e.shiftKey) {
+          if (document.activeElement === firstElement) {
+            e.preventDefault();
+            lastElement.focus();
+          }
+        } else {
+          if (document.activeElement === lastElement) {
+            e.preventDefault();
+            firstElement.focus();
+          }
+        }
+      }
+      if (e.key === 'Escape') {
+        closeMenu();
+      }
+    });
   }
 }
 
@@ -165,9 +194,9 @@ function closeMenu() {
 
 // Manual entry functionality
 function initializeManualEntry() {
-  const manualEntryBtn = document.getElementById('manual-entry-btn');
-  const manualEntryModal = document.getElementById('manual-entry-modal');
-  const closeManualBtn = document.getElementById('close-manual-btn');
+  // Use the generic modal setup
+  setupModal('manual-entry-modal', ['manual-entry-btn'], ['close-manual-btn']);
+
   const numBtns = document.querySelectorAll('.num-btn[data-number]');
   const clearBtn = document.getElementById('clear-btn');
   const submitManualBtn = document.getElementById('submit-manual-btn');
@@ -175,25 +204,13 @@ function initializeManualEntry() {
     'manual-onecard'
   ) as HTMLInputElement;
 
-  if (!manualEntryBtn || !manualEntryModal || !closeManualBtn) return;
-
-  // Open manual entry modal
-  manualEntryBtn.addEventListener('click', () => {
-    openManualEntry();
-    closeMenu();
-  });
-
-  // Close manual entry modal
-  closeManualBtn.addEventListener('click', () => {
-    closeManualEntry();
-  });
-
-  // Close when clicking outside
-  manualEntryModal.addEventListener('click', (e) => {
-    if (e.target === manualEntryModal) {
-      closeManualEntry();
-    }
-  });
+  // Add closeMenu call to the openManualEntry function
+  const manualEntryBtn = document.getElementById('manual-entry-btn');
+  if (manualEntryBtn) {
+    manualEntryBtn.addEventListener('click', () => {
+      closeMenu();
+    });
+  }
 
   // Number button functionality
   numBtns.forEach((btn) => {
@@ -236,24 +253,54 @@ function initializeManualEntry() {
   });
 }
 
-// Config modal functionality
-function initializeConfig() {
-  const configModal = document.getElementById('config-modal');
-  const closeConfigBtn = document.getElementById('close-config-btn');
+// Generic modal setup helper
+function setupModal(
+  modalId: string,
+  openTriggerIds: string[],
+  closeTriggerIds: string[]
+) {
+  const modal = document.getElementById(modalId);
+  if (!modal) return;
 
-  if (!configModal || !closeConfigBtn) return;
-
-  // Close config modal
-  closeConfigBtn.addEventListener('click', () => {
-    closeConfig();
-  });
-
-  // Close when clicking outside
-  configModal.addEventListener('click', (e) => {
-    if (e.target === configModal) {
-      closeConfig();
+  // Open buttons
+  openTriggerIds.forEach(id => {
+    const trigger = document.getElementById(id);
+    if (trigger) {
+      trigger.addEventListener('click', () => {
+        if (modalId === 'config-modal') {
+          openConfig();
+        } else if (modalId === 'manual-entry-modal') {
+          openManualEntry();
+        }
+      });
     }
   });
+
+  // Close buttons + outside click
+  const doClose = () => {
+    if (modalId === 'config-modal') {
+      closeConfig();
+    } else if (modalId === 'manual-entry-modal') {
+      closeManualEntry();
+    }
+  };
+
+  closeTriggerIds.forEach(id => {
+    const closeBtn = document.getElementById(id);
+    if (closeBtn) {
+      closeBtn.addEventListener('click', doClose);
+    }
+  });
+
+  modal.addEventListener('click', (e: MouseEvent) => {
+    if (e.target === modal) doClose();
+  });
+}
+
+// Config modal functionality
+function initializeConfig() {
+  // Use the generic modal setup
+  setupModal('config-modal', ['show-config-btn'], ['close-config-btn']);
 }
 
 function openManualEntry() {
@@ -261,6 +308,10 @@ function openManualEntry() {
   if (manualEntryModal && !isManualEntryOpen) {
     isManualEntryOpen = true;
     manualEntryModal.classList.add('active');
+
+    // Focus management for accessibility
+    manualEntryModal.focus();
+
     // Reset input
     currentOneCardInput = '';
     const oneCardInput = document.getElementById(
@@ -268,7 +319,16 @@ function openManualEntry() {
     ) as HTMLInputElement;
     if (oneCardInput) {
       oneCardInput.value = '';
+      // Focus the input field
+      oneCardInput.focus();
     }
+
+    // Handle escape key
+    manualEntryModal.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closeManualEntry();
+      }
+    });
   }
 }
 
@@ -295,6 +355,22 @@ async function openConfig() {
     isConfigOpen = true;
     configModal.classList.add('active');
 
+    // Focus management for accessibility
+    configModal.focus();
+
+    // Focus the first focusable element
+    const firstElement = configModal.querySelector('button') as HTMLElement;
+    if (firstElement) {
+      firstElement.focus();
+    }
+
+    // Handle escape key
+    configModal.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closeConfig();
+      }
+    });
+
     try {
       // Load configuration data
       const config: config = await invoke('get_full_config');
@@ -305,19 +381,13 @@ async function openConfig() {
         error instanceof Error ? error.message : 'Failed to load configuration';
       errorHandler.handleApplicationError('config', errorMsg, 'medium');
 
-      // Show error in config fields
-      const configFields = [
-        'server-url',
-        'device-id',
-        'device-location',
-        'device-name',
-        'first-run',
-        'server-token',
-      ];
-      configFields.forEach((fieldId) => {
-        const element = document.getElementById(`config-${fieldId}`);
+      // Show error in config fields using the config field map
+      Object.values(configFieldMap).forEach(({ id }) => {
+        const element = document.getElementById(id);
         if (element) {
           element.textContent = 'Error loading';
+        } else {
+          console.warn(`Config field element with id '${id}' not found.`);
         }
       });
     }
@@ -332,53 +402,53 @@ function closeConfig() {
   }
 }
 
-function updateConfigDisplay(config: config) {
-  // Update server URL
-  const serverUrlElement = document.getElementById('config-server-url');
-  if (serverUrlElement) {
-    serverUrlElement.textContent = config.server_url || 'Not set';
-  }
-
-  // Update device ID
-  const deviceIdElement = document.getElementById('config-device-id');
-  if (deviceIdElement) {
-    deviceIdElement.textContent = config.device_id || 'Not set';
-  }
-
-  // Update device location
-  const deviceLocationElement = document.getElementById(
-    'config-device-location'
-  );
-  if (deviceLocationElement) {
-    deviceLocationElement.textContent = config.device_location || 'Not set';
-  }
-
-  // Update device name
-  const deviceNameElement = document.getElementById('config-device-name');
-  if (deviceNameElement) {
-    deviceNameElement.textContent = config.device_friendly_name || 'Not set';
-  }
-
-  // Update first run status
-  const firstRunElement = document.getElementById('config-first-run');
-  if (firstRunElement) {
-    firstRunElement.textContent = config.first_run ? 'Yes' : 'No';
-  }
-
-  // Update server token (masked for security)
-  const serverTokenElement = document.getElementById('config-server-token');
-  if (serverTokenElement) {
-    if (config.server_token) {
-      const token = config.server_token as string;
-      const maskedToken =
-        token.length > 8
-          ? `${token.substring(0, 4)}...${token.substring(token.length - 4)}`
-          : '***';
-      serverTokenElement.textContent = maskedToken;
-    } else {
-      serverTokenElement.textContent = 'Not set';
+// Configuration field mapping for cleaner display logic
+const configFieldMap: Record<keyof config, {
+  id: string;
+  transform?: (value: any) => string;
+}> = {
+  server_url: {
+    id: 'config-server-url',
+    transform: (v: string) => v || 'Not set'
+  },
+  server_token: {
+    id: 'config-server-token',
+    transform: (t: string) => {
+      if (!t) return 'Not set';
+      // Ensure short tokens are never fully revealed
+      if (t.length <= 8) return '***';
+      return `${t.substring(0, 4)}...${t.substring(t.length - 4)}`;
     }
-  }
+  },
+  device_id: {
+    id: 'config-device-id',
+    transform: (v: string) => v || 'Not set'
+  },
+  device_location: {
+    id: 'config-device-location',
+    transform: (v: string) => v || 'Not set'
+  },
+  device_friendly_name: {
+    id: 'config-device-name',
+    transform: (v: string) => v || 'Not set'
+  },
+  first_run: {
+    id: 'config-first-run',
+    transform: (v: boolean) => v ? 'Yes' : 'No'
+  },
+};
+
+function updateConfigDisplay(config: config) {
+  Object.entries(configFieldMap).forEach(([key, { id, transform }]) => {
+    const element = document.getElementById(id);
+    if (!element) {
+      console.warn(`Config field element with id '${id}' not found.`);
+      return;
+    }
+
+    const rawValue = (config as any)[key];
+    element.textContent = transform ? transform(rawValue) : String(rawValue);
+  });
 }
 
 function showEntrySuccess() {
@@ -386,13 +456,13 @@ function showEntrySuccess() {
   const entryData = document.getElementById('entry-data');
   if (entryData) {
     entryData.innerHTML = '<p>Entry submitted successfully!</p>';
-    // Change screen color to green for success
-    document.body.style.backgroundColor = 'green';
+    // Change screen color to green for success using CSS class
+    document.body.classList.add('success-state');
     // Reset after 3 seconds
     setTimeout(() => {
       entryData.innerHTML =
         '<p>Swipe your card or scan your barcode to record an entry...</p>';
-      document.body.style.backgroundColor = '#00447c';
+      document.body.classList.remove('success-state');
     }, 3000);
   }
 }
@@ -402,13 +472,13 @@ function showEntryError() {
   const entryData = document.getElementById('entry-data');
   if (entryData) {
     entryData.innerHTML = '<p>Error submitting entry. Please try again.</p>';
-    // Change screen color to red for error
-    document.body.style.backgroundColor = '#cc0000';
+    // Change screen color to red for error using CSS class
+    document.body.classList.add('error-state');
     // Reset after 3 seconds
     setTimeout(() => {
       entryData.innerHTML =
         '<p>Swipe your card or scan your barcode to record an entry...</p>';
-      document.body.style.backgroundColor = '#00447c';
+      document.body.classList.remove('error-state');
     }, 3000);
   }
 }

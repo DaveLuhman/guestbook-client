@@ -30,8 +30,9 @@
   <div class="menu-trigger" id="menu-trigger"></div>
 
   <!-- Menu modal -->
-  <div class="menu-modal" id="menu-modal">
+  <div class="menu-modal" id="menu-modal" role="dialog" aria-modal="true" aria-labelledby="menu-title" tabindex="-1">
     <div class="menu-content">
+      <h2 id="menu-title" class="sr-only">Menu Options</h2>
       <button class="menu-button" id="manual-entry-btn">Manual Entry</button>
       <button class="menu-button" id="show-config-btn">Show Config</button>
       <button class="menu-button" id="restart-appliance-btn">Restart Appliance</button>
@@ -40,11 +41,11 @@
   </div>
 
   <!-- Manual Entry Modal -->
-  <div class="manual-entry-modal" id="manual-entry-modal">
+  <div class="manual-entry-modal" id="manual-entry-modal" role="dialog" aria-modal="true" aria-labelledby="manual-entry-title" tabindex="-1">
     <div class="manual-entry-content">
       <div class="modal-header">
-        <h2>Manual Entry</h2>
-        <button class="close-x-btn" id="close-manual-btn"><span class="material-symbols-outlined">
+        <h2 id="manual-entry-title">Manual Entry</h2>
+        <button class="close-x-btn" id="close-manual-btn" aria-label="Close manual entry"><span class="material-symbols-outlined">
             close
           </span></button>
       </div>
@@ -80,11 +81,11 @@
   </div>
 
   <!-- Config Modal -->
-  <div class="config-modal" id="config-modal">
+  <div class="config-modal" id="config-modal" role="dialog" aria-modal="true" aria-labelledby="config-title" tabindex="-1">
     <div class="config-content">
       <div class="modal-header">
-        <h2>Configuration</h2>
-        <button class="close-x-btn" id="close-config-btn"><span class="material-symbols-outlined">
+        <h2 id="config-title">Configuration</h2>
+        <button class="close-x-btn" id="close-config-btn" aria-label="Close configuration"><span class="material-symbols-outlined">
             close
           </span></button>
       </div>

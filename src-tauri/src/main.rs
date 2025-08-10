@@ -211,7 +211,6 @@ fn main() {
     // Set WebKitGTK compositing mode to disabled on Linux to prevent image artifacting
     #[cfg(target_os = "linux")]
     {
-        std::env::set_var("WEBGTK_COMPOSITING_MODE_DISABLE", "1");
         // Additional WebKitGTK settings for better Linux compatibility
         std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
         std::env::set_var("WEBKIT_DISABLE_GPU_PROCESS", "1");

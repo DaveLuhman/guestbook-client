@@ -170,15 +170,21 @@ export class ErrorHandler {
   private updateErrorDisplay(context: ErrorContext) {
     const entryData = document.getElementById('entry-data');
     if (entryData) {
-      const errorColor = this.getErrorColor(context.severity);
-      entryData.innerHTML = `<p style="color: ${errorColor}; background-color: rgba(0,0,0,0.8); padding: 10px; border-radius: 5px;">Device Error: ${context.message}</p>`;
+      // Use CSS classes instead of inline styles
+      const errorElement = document.createElement('p');
+      errorElement.className = `error-message ${context.severity}`;
+      errorElement.textContent = `Device Error: ${context.message}`;
+
+      // Clear and append the new element
+      entryData.innerHTML = '';
+      entryData.appendChild(errorElement);
+
       // Don't change body background color - it makes text unreadable
 
       // Reset after 5 seconds
       setTimeout(() => {
-        if (entryData.innerHTML.includes('Device Error:')) {
-          entryData.innerHTML =
-            '<p>Swipe your card or scan your barcode to record an entry...</p>';
+        if (entryData.querySelector('p')?.textContent?.includes('Device Error:')) {
+          entryData.innerHTML = '<p>Swipe your card or scan your barcode to record an entry...</p>';
         }
       }, 5000);
     }

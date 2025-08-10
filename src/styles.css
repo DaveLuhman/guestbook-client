@@ -17,6 +17,54 @@ body {
   font-size: 16px;
 }
 
+/* Screen reader only class for accessibility */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Error styling classes */
+.error-message {
+  background-color: rgba(0,0,0,0.8);
+  padding: 10px;
+  border-radius: 5px;
+  margin: 10px 0;
+}
+
+.error-message.low {
+  color: #FFA500;
+}
+
+.error-message.medium {
+  color: #FF8C00;
+}
+
+.error-message.high {
+  color: #FF4500;
+}
+
+.error-message.critical {
+  color: #DC143C;
+}
+
+/* Success and error state classes */
+.success-state {
+  background-color: green !important;
+  transition: background-color 0.3s ease;
+}
+
+.error-state {
+  background-color: #cc0000 !important;
+  transition: background-color 0.3s ease;
+}
+
 /* Grid container for 3-row layout */
 .grid-container {
   display: grid;
