@@ -190,20 +190,7 @@ export class ErrorHandler {
     }
   }
 
-  private getErrorColor(severity: string): string {
-    switch (severity) {
-      case 'low':
-        return '#FFA500'; // Orange
-      case 'medium':
-        return '#FF8C00'; // Dark Orange
-      case 'high':
-        return '#FF4500'; // Orange Red
-      case 'critical':
-        return '#DC143C'; // Crimson
-      default:
-        return '#FF8C00';
-    }
-  }
+
 
   // Public method to handle errors from other parts of the application
   public handleApplicationError(
