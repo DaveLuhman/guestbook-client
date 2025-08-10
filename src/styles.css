@@ -261,6 +261,47 @@ h1 {
   color: white;
 }
 
+.modal-header {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.modal-header h2 {
+  margin: 0;
+}
+
+.close-x-btn {
+  position: absolute;
+  right: -20px;
+  top: -20px;
+  width: 40px;
+  height: 40px;
+  background-color: #cc0000;
+  color: white;
+  border: 2px solid white;
+  border-radius: 50%;
+  font-size: 20px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.close-x-btn:hover {
+  background-color: #ff0000;
+  transform: scale(1.1);
+}
+
+.close-x-btn:active {
+  transform: scale(0.95);
+}
+
 .input-section {
   display: flex;
   flex-direction: column;
@@ -301,6 +342,17 @@ h1 {
   justify-content: center;
 }
 
+.numberpad-row:last-of-type {
+  justify-content: center;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 10px;
+}
+
 .num-btn {
   width: 80px;
   height: 80px;
@@ -313,6 +365,9 @@ h1 {
   font-family: 'Poppins', sans-serif;
   cursor: pointer;
   transition: background-color 0.2s ease, transform 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .num-btn:hover {
@@ -321,6 +376,34 @@ h1 {
 }
 
 .num-btn:active {
+  transform: translateY(0);
+  background-color: #0055aa;
+}
+
+.action-btn {
+  background-color: #0066cc;
+  color: white;
+  border: 2px solid white;
+  border-radius: 10px;
+  padding: 15px 30px;
+  font-size: clamp(20px, 2.5vw, 24px);
+  font-weight: 600;
+  font-family: 'Poppins', sans-serif;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60px;
+  min-width: 120px;
+}
+
+.action-btn:hover {
+  background-color: #0088ff;
+  transform: translateY(-2px);
+}
+
+.action-btn:active {
   transform: translateY(0);
   background-color: #0055aa;
 }
@@ -381,5 +464,20 @@ h1 {
 
   .numberpad-row {
     gap: 8px;
+  }
+
+  .action-btn {
+    padding: 12px 25px;
+    min-height: 50px;
+    min-width: 100px;
+    font-size: clamp(18px, 2.2vw, 22px);
+  }
+
+  .close-x-btn {
+    width: 35px;
+    height: 35px;
+    font-size: 18px;
+    right: -15px;
+    top: -15px;
   }
 }

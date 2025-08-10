@@ -145,7 +145,7 @@ function initializeManualEntry() {
   numBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       const number = (btn as HTMLElement).getAttribute('data-number');
-      if (number && currentOneCardInput.length < 20) {
+      if (number && currentOneCardInput.length < 7) {
         currentOneCardInput += number;
         oneCardInput.value = currentOneCardInput;
         soundManager.playNumberBeep();
