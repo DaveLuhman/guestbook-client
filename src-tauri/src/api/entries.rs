@@ -36,7 +36,7 @@ pub async fn submit_entry(
     if response.is_err() {
         return Err(response.err().unwrap().to_string());
     }
-    let body = response.unwrap().text().await.unwrap();
+    let _body = response.unwrap().text().await.unwrap();
     println!("{}{}", card_data.onecard, Utc::now().to_rfc3339());
     Ok(())
 }

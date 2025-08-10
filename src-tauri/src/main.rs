@@ -4,6 +4,7 @@ mod api;
 mod config;
 mod devices;
 mod hid;
+mod logging;
 use api::devices::{register_device, send_heartbeat};
 use config::config_manager::{get_full_config, ConfigManager};
 use devices::barcode::{listen_to_barcode, open_symbol_scanner};
@@ -29,27 +30,43 @@ fn get_hid_devices() -> Vec<String> {
 }
 #[tauri::command]
 fn start_barcode_listener(window: tauri::Window) -> Result<(), String> {
-    let api = hidapi::HidApi::new().map_err(|e| e.to_string())?;
+    log::info!("Attempting to start barcode scanner listener");
+    let api = hidapi::HidApi::new().map_err(|e| {
+        log::error!("Failed to initialize HID API: {}", e);
+        e.to_string()
+    })?;
 
     match open_symbol_scanner(&api) {
         Some(device) => {
+            log::info!("Barcode scanner found, starting listener");
             listen_to_barcode(device, window);
             Ok(())
         }
-        None => Err("No compatible barcode scanner found.".into()),
+        None => {
+            log::warn!("No compatible barcode scanner found");
+            Err("No compatible barcode scanner found.".into())
+        }
     }
 }
 
 #[tauri::command]
 fn start_magtek_listener(window: tauri::Window) -> Result<(), String> {
-    let api = hidapi::HidApi::new().map_err(|e| e.to_string())?;
+    log::info!("Attempting to start MagTek reader listener");
+    let api = hidapi::HidApi::new().map_err(|e| {
+        log::error!("Failed to initialize HID API: {}", e);
+        e.to_string()
+    })?;
 
     match open_magtek_reader(&api) {
         Some(device) => {
+            log::info!("MagTek reader found, starting listener");
             listen_to_magtek(device, window);
             Ok(())
         }
-        None => Err("No compatible MagTek reader found.".into()),
+        None => {
+            log::warn!("No compatible MagTek reader found");
+            Err("No compatible MagTek reader found.".into())
+        }
     }
 }
 #[tauri::command]
@@ -129,7 +146,43 @@ async fn submit_first_run_config(
 async fn send_heartbeat_command(
     config_manager: tauri::State<'_, ConfigManager>,
 ) -> Result<(), String> {
-    send_heartbeat(config_manager).await
+    log::info!("Sending heartbeat to server");
+    match send_heartbeat(config_manager).await {
+        Ok(_) => {
+            log::info!("Heartbeat sent successfully");
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("Heartbeat failed: {}", e);
+            Err(e)
+        }
+    }
+}
+
+#[tauri::command]
+async fn log_error(
+    level: String,
+    source: String,
+    message: String,
+    timestamp: String,
+) -> Result<(), String> {
+    match level.as_str() {
+        "low" => log::debug!("[{}] {}: {}", source, timestamp, message),
+        "medium" => log::info!("[{}] {}: {}", source, timestamp, message),
+        "high" => log::warn!("[{}] {}: {}", source, timestamp, message),
+        "critical" => log::error!("[{}] {}: {}", source, timestamp, message),
+        _ => log::info!("[{}] {}: {}", source, timestamp, message),
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn test_logging() -> Result<(), String> {
+    log::debug!("This is a debug message");
+    log::info!("This is an info message");
+    log::warn!("This is a warning message");
+    log::error!("This is an error message");
+    Ok(())
 }
 
 fn main() {
@@ -138,12 +191,20 @@ fn main() {
 
     let mut builder = tauri::Builder::default().plugin(tauri_plugin_http::init());
 
+    // Initialize logging before creating the app
+    let config_manager = ConfigManager::new();
+    if let Err(e) = logging::init_logging(&config_manager.config_path) {
+        eprintln!("Failed to initialize logging: {}", e);
+    } else {
+        log::info!("Logging system initialized successfully");
+    }
+
     #[cfg(debug_assertions)]
     {
         builder = builder.plugin(devtools);
     }
     builder
-        .manage(ConfigManager::new())
+        .manage(config_manager)
         .invoke_handler(tauri::generate_handler![
             get_hid_devices,
             start_barcode_listener,
@@ -152,6 +213,8 @@ fn main() {
             get_full_config,
             submit_first_run_config,
             send_heartbeat_command,
+            log_error,
+            test_logging,
             submit_swipe_entry,
             submit_barcode_entry,
             submit_manual_entry,
