@@ -62,7 +62,36 @@ sudo apt install -y \
   libgtk-3-dev \
   libappindicator3-dev \
   libwebkit2gtk-4.0-dev \
-  libudev1
+  libudev-dev
+
+# Install GStreamer and media codec libraries for AppImage compatibility
+echo "🎵 Installing GStreamer and media codec libraries..."
+sudo apt install -y \
+  gstreamer1.0-plugins-base \
+  gstreamer1.0-plugins-good \
+  gstreamer1.0-plugins-bad \
+  gstreamer1.0-plugins-ugly \
+  gstreamer1.0-libav \
+  gstreamer1.0-tools \
+  gstreamer1.0-x \
+  gstreamer1.0-alsa \
+  gstreamer1.0-pulseaudio \
+  gstreamer1.0-dev \
+  libgstreamer1.0-dev \
+  libgstreamer-plugins-base1.0-dev \
+  libgstreamer-plugins-bad1.0-dev \
+  libfdk-aac-dev \
+  libavcodec-dev \
+  libavformat-dev \
+  libavutil-dev \
+  libswresample-dev
+
+# Install additional GStreamer plugins that might be missing
+echo "🔌 Installing additional GStreamer plugins..."
+sudo apt install -y \
+  gstreamer1.0-plugins-base-apps \
+  gstreamer1.0-plugins-good-apps \
+  gstreamer1.0-plugins-bad-apps
 
 echo "✅ Tauri dependencies installation complete!"
 echo ""
