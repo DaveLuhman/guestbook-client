@@ -61,7 +61,8 @@ sudo apt install -y \
   pkg-config \
   libgtk-3-dev \
   libappindicator3-dev \
-  libwebkit2gtk-4.0-dev
+  libwebkit2gtk-4.0-dev \
+  libudev1
 
 echo "✅ Tauri dependencies installation complete!"
 echo ""
