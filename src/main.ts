@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { startHIDManager } from './hid/HIDManager';
 import { soundManager } from './sound/soundManager';
+import { errorHandler } from './error/errorHandler';
 
 interface config {
   server_url: string;
@@ -92,6 +93,22 @@ function initializeMenu() {
     // TODO: Implement restart functionality
     closeMenu();
   });
+
+  // Add test logging button
+  const testLoggingBtn = document.getElementById('test-logging-btn');
+  testLoggingBtn?.addEventListener('click', async () => {
+    console.log('Test Logging clicked');
+    soundManager.playBeep(700, 120);
+    try {
+      await invoke('test_logging');
+      console.log('Test logging completed');
+    } catch (error) {
+      console.error('Test logging failed:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Test logging failed';
+      errorHandler.handleApplicationError('system', errorMsg, 'medium');
+    }
+    closeMenu();
+  });
 }
 
 function openMenu() {
@@ -170,8 +187,8 @@ function initializeManualEntry() {
         closeManualEntry();
       } catch (error) {
         console.error('Manual entry submission failed:', error);
-        // Show error message
-        soundManager.playError();
+        const errorMsg = error instanceof Error ? error.message : 'Manual entry submission failed';
+        errorHandler.handleApplicationError('keypad', errorMsg, 'high');
         showEntryError();
       }
     }
@@ -248,6 +265,8 @@ async function scheduleHeartbeat() {
     } catch (e) {
       // Optionally, log error or notify user
       console.error('Heartbeat failed', e);
+      const errorMsg = e instanceof Error ? e.message : 'Heartbeat failed';
+      errorHandler.handleApplicationError('network', errorMsg, 'medium');
     }
     scheduleHeartbeat(); // Schedule next heartbeat
   }, interval);

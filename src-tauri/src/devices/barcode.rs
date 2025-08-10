@@ -1,16 +1,21 @@
 use hidapi::{HidApi, HidDevice};
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Window};
+use log::{info, warn, error};
 
 pub fn listen_to_barcode(device: HidDevice, window: Window) {
+    info!("Starting barcode scanner listener thread");
     std::thread::spawn(move || {
         let mut buffer = [0u8; 64];
         let mut scan_buffer = String::new();
         let mut last_char_time = Instant::now();
+        let mut consecutive_errors = 0;
+        let max_consecutive_errors = 5;
 
         loop {
             match device.read(&mut buffer) {
                 Ok(size) => {
+                    consecutive_errors = 0; // Reset error counter on successful read
                     let now = Instant::now();
                     let raw_data = &buffer[..size];
                     let part = String::from_utf8_lossy(raw_data);
@@ -27,13 +32,23 @@ pub fn listen_to_barcode(device: HidDevice, window: Window) {
                     let cleaned = scan_buffer.replace(|c: char| !c.is_ascii_digit(), "");
 
                     if cleaned.len() == 7 || cleaned.len() == 9 {
+                        info!("Barcode scanned: {}", cleaned);
                         window.emit("barcode-data", cleaned.clone()).ok();
                         scan_buffer.clear();
                     }
                 }
                 Err(e) => {
-                    window.emit("hid-error", e.to_string()).ok();
-                    break;
+                    consecutive_errors += 1;
+                    warn!("Barcode scanner read error (attempt {}/{}): {}", consecutive_errors, max_consecutive_errors, e);
+
+                    if consecutive_errors >= max_consecutive_errors {
+                        error!("Barcode scanner failed after {} consecutive errors, stopping listener", max_consecutive_errors);
+                        window.emit("hid-error", format!("Barcode scanner failed: {}", e)).ok();
+                        break;
+                    }
+
+                    // Wait a bit before retrying
+                    std::thread::sleep(Duration::from_millis(100));
                 }
             }
         }

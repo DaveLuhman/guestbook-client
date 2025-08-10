@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { updateScanData } from './barcodeScanner';
 import { type swipeData, updateSwipeData } from './magstripReader';
 import { soundManager } from '../sound/soundManager';
+import { errorHandler } from '../error/errorHandler';
 
 const entryDataEl = document.querySelector('#entry-data');
 export const defaultMessage = 'Swipe your card or scan your barcode to record an entry...';
@@ -21,33 +22,21 @@ const resetEntryData = () => {
   }, 3000);
 };
 
-const displayHidError = (error: string) => {
-  const body = document.body;
-  body.style.backgroundColor = '#c40000';
-  if (entryDataEl) {
-    entryDataEl.innerHTML = `<p>Error: ${error}</p>`;
-  }
-  // Play error sound
-  soundManager.playError();
-};
-
 export async function startHIDManager() {
   try {
     await invoke('start_barcode_listener');
-  } catch {
-    displayHidError('Barcode Scanner not found');
-    // Play error sound for device not found
-    soundManager.playError();
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Barcode Scanner not found';
+    errorHandler.handleApplicationError('barcode', errorMsg, 'medium');
     setTimeout(() => {
       resetEntryData();
     }, 10000);
   }
   try {
     await invoke('start_magtek_listener');
-  } catch {
-    displayHidError('MagTek Reader not found');
-    // Play error sound for device not found
-    soundManager.playError();
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'MagTek Reader not found';
+    errorHandler.handleApplicationError('magtek', errorMsg, 'medium');
     setTimeout(() => {
       resetEntryData();
     }, 10000);
@@ -64,7 +53,7 @@ export async function startHIDManager() {
         onecard = event.payload.toString();
       } else {
         console.error('Invalid barcode payload:', event.payload);
-        displayHidError('Invalid barcode data');
+        errorHandler.handleApplicationError('barcode', 'Invalid barcode data', 'medium');
         resetEntryData();
         return;
       }
@@ -75,7 +64,8 @@ export async function startHIDManager() {
       invoke('submit_barcode_entry', { onecard });
     } catch (error) {
       console.error('Submit error:', error);
-      displayHidError(error as string);
+      const errorMsg = error instanceof Error ? error.message : 'Unknown barcode error';
+      errorHandler.handleApplicationError('barcode', errorMsg, 'high');
     }
     resetEntryData();
   });
@@ -91,7 +81,8 @@ export async function startHIDManager() {
       invoke('submit_swipe_entry', { name: swipeData.name, onecard: swipeData.onecard });
     } catch (error) {
       console.error('Submit error:', error);
-      displayHidError(error as string);
+      const errorMsg = error instanceof Error ? error.message : 'Unknown MagTek error';
+      errorHandler.handleApplicationError('magtek', errorMsg, 'high');
     }
     resetEntryData();
   });
