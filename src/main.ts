@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
+import { errorHandler } from './error/errorHandler';
 import { startHIDManager } from './hid/HIDManager';
 import { soundManager } from './sound/soundManager';
-import { errorHandler } from './error/errorHandler';
 
 interface config {
   server_url: string;
@@ -18,6 +18,7 @@ let isMenuOpen = false;
 
 // Manual entry state management
 let isManualEntryOpen = false;
+let isConfigOpen = false;
 let currentOneCardInput = '';
 
 // Menu functionality
@@ -80,18 +81,52 @@ function initializeMenu() {
     closeMenu();
   });
 
-  showConfigBtn?.addEventListener('click', () => {
+  showConfigBtn?.addEventListener('click', async () => {
     console.log('Show Config clicked');
     soundManager.playBeep(700, 120);
-    // TODO: Implement config display functionality
     closeMenu();
+    await openConfig();
   });
 
-  restartApplianceBtn?.addEventListener('click', () => {
+  restartApplianceBtn?.addEventListener('click', async () => {
     console.log('Restart Appliance clicked');
     soundManager.playBeep(700, 120);
-    // TODO: Implement restart functionality
-    closeMenu();
+
+    if (!restartApplianceBtn) return;
+
+    // Store original text for potential error recovery
+    const originalText = restartApplianceBtn.textContent;
+
+    try {
+      // Show user feedback that restart is in progress
+      restartApplianceBtn.textContent = 'Restarting...';
+      (restartApplianceBtn as HTMLButtonElement).disabled = true;
+
+      // Call the Tauri restart function
+      await invoke('restart_appliance');
+      console.log('Restart command sent successfully');
+
+      // Show success feedback briefly before restart
+      restartApplianceBtn.textContent = 'Restarting...';
+      restartApplianceBtn.style.backgroundColor = '#00aa00';
+
+      // Note: The app will restart, so we don't need to close the menu
+      // The button will remain in this state until the app restarts
+    } catch (error) {
+      console.error('Restart failed:', error);
+      const errorMsg =
+        error instanceof Error ? error.message : 'Restart failed';
+      errorHandler.handleApplicationError('system', errorMsg, 'medium');
+
+      // Reset button state on error
+      if (restartApplianceBtn) {
+        restartApplianceBtn.textContent = originalText;
+        (restartApplianceBtn as HTMLButtonElement).disabled = false;
+        restartApplianceBtn.style.backgroundColor = '';
+      }
+
+      closeMenu();
+    }
   });
 
   // Add test logging button
@@ -104,7 +139,8 @@ function initializeMenu() {
       console.log('Test logging completed');
     } catch (error) {
       console.error('Test logging failed:', error);
-      const errorMsg = error instanceof Error ? error.message : 'Test logging failed';
+      const errorMsg =
+        error instanceof Error ? error.message : 'Test logging failed';
       errorHandler.handleApplicationError('system', errorMsg, 'medium');
     }
     closeMenu();
@@ -135,7 +171,9 @@ function initializeManualEntry() {
   const numBtns = document.querySelectorAll('.num-btn[data-number]');
   const clearBtn = document.getElementById('clear-btn');
   const submitManualBtn = document.getElementById('submit-manual-btn');
-  const oneCardInput = document.getElementById('manual-onecard') as HTMLInputElement;
+  const oneCardInput = document.getElementById(
+    'manual-onecard'
+  ) as HTMLInputElement;
 
   if (!manualEntryBtn || !manualEntryModal || !closeManualBtn) return;
 
@@ -158,7 +196,7 @@ function initializeManualEntry() {
   });
 
   // Number button functionality
-  numBtns.forEach(btn => {
+  numBtns.forEach((btn) => {
     btn.addEventListener('click', () => {
       const number = (btn as HTMLElement).getAttribute('data-number');
       if (number && currentOneCardInput.length < 7) {
@@ -187,10 +225,33 @@ function initializeManualEntry() {
         closeManualEntry();
       } catch (error) {
         console.error('Manual entry submission failed:', error);
-        const errorMsg = error instanceof Error ? error.message : 'Manual entry submission failed';
+        const errorMsg =
+          error instanceof Error
+            ? error.message
+            : 'Manual entry submission failed';
         errorHandler.handleApplicationError('keypad', errorMsg, 'high');
         showEntryError();
       }
+    }
+  });
+}
+
+// Config modal functionality
+function initializeConfig() {
+  const configModal = document.getElementById('config-modal');
+  const closeConfigBtn = document.getElementById('close-config-btn');
+
+  if (!configModal || !closeConfigBtn) return;
+
+  // Close config modal
+  closeConfigBtn.addEventListener('click', () => {
+    closeConfig();
+  });
+
+  // Close when clicking outside
+  configModal.addEventListener('click', (e) => {
+    if (e.target === configModal) {
+      closeConfig();
     }
   });
 }
@@ -202,7 +263,9 @@ function openManualEntry() {
     manualEntryModal.classList.add('active');
     // Reset input
     currentOneCardInput = '';
-    const oneCardInput = document.getElementById('manual-onecard') as HTMLInputElement;
+    const oneCardInput = document.getElementById(
+      'manual-onecard'
+    ) as HTMLInputElement;
     if (oneCardInput) {
       oneCardInput.value = '';
     }
@@ -216,9 +279,104 @@ function closeManualEntry() {
     manualEntryModal.classList.remove('active');
     // Reset input
     currentOneCardInput = '';
-    const oneCardInput = document.getElementById('manual-onecard') as HTMLInputElement;
+    const oneCardInput = document.getElementById(
+      'manual-onecard'
+    ) as HTMLInputElement;
     if (oneCardInput) {
       oneCardInput.value = '';
+    }
+  }
+}
+
+// Config modal management
+async function openConfig() {
+  const configModal = document.getElementById('config-modal');
+  if (configModal && !isConfigOpen) {
+    isConfigOpen = true;
+    configModal.classList.add('active');
+
+    try {
+      // Load configuration data
+      const config: config = await invoke('get_full_config');
+      updateConfigDisplay(config);
+    } catch (error) {
+      console.error('Failed to load config:', error);
+      const errorMsg =
+        error instanceof Error ? error.message : 'Failed to load configuration';
+      errorHandler.handleApplicationError('config', errorMsg, 'medium');
+
+      // Show error in config fields
+      const configFields = [
+        'server-url',
+        'device-id',
+        'device-location',
+        'device-name',
+        'first-run',
+        'server-token',
+      ];
+      configFields.forEach((fieldId) => {
+        const element = document.getElementById(`config-${fieldId}`);
+        if (element) {
+          element.textContent = 'Error loading';
+        }
+      });
+    }
+  }
+}
+
+function closeConfig() {
+  const configModal = document.getElementById('config-modal');
+  if (configModal && isConfigOpen) {
+    isConfigOpen = false;
+    configModal.classList.remove('active');
+  }
+}
+
+function updateConfigDisplay(config: config) {
+  // Update server URL
+  const serverUrlElement = document.getElementById('config-server-url');
+  if (serverUrlElement) {
+    serverUrlElement.textContent = config.server_url || 'Not set';
+  }
+
+  // Update device ID
+  const deviceIdElement = document.getElementById('config-device-id');
+  if (deviceIdElement) {
+    deviceIdElement.textContent = config.device_id || 'Not set';
+  }
+
+  // Update device location
+  const deviceLocationElement = document.getElementById(
+    'config-device-location'
+  );
+  if (deviceLocationElement) {
+    deviceLocationElement.textContent = config.device_location || 'Not set';
+  }
+
+  // Update device name
+  const deviceNameElement = document.getElementById('config-device-name');
+  if (deviceNameElement) {
+    deviceNameElement.textContent = config.device_friendly_name || 'Not set';
+  }
+
+  // Update first run status
+  const firstRunElement = document.getElementById('config-first-run');
+  if (firstRunElement) {
+    firstRunElement.textContent = config.first_run ? 'Yes' : 'No';
+  }
+
+  // Update server token (masked for security)
+  const serverTokenElement = document.getElementById('config-server-token');
+  if (serverTokenElement) {
+    if (config.server_token) {
+      const token = config.server_token as string;
+      const maskedToken =
+        token.length > 8
+          ? `${token.substring(0, 4)}...${token.substring(token.length - 4)}`
+          : '***';
+      serverTokenElement.textContent = maskedToken;
+    } else {
+      serverTokenElement.textContent = 'Not set';
     }
   }
 }
@@ -232,7 +390,8 @@ function showEntrySuccess() {
     document.body.style.backgroundColor = 'green';
     // Reset after 3 seconds
     setTimeout(() => {
-      entryData.innerHTML = '<p>Swipe your card or scan your barcode to record an entry...</p>';
+      entryData.innerHTML =
+        '<p>Swipe your card or scan your barcode to record an entry...</p>';
       document.body.style.backgroundColor = '#00447c';
     }, 3000);
   }
@@ -247,7 +406,8 @@ function showEntryError() {
     document.body.style.backgroundColor = '#cc0000';
     // Reset after 3 seconds
     setTimeout(() => {
-      entryData.innerHTML = '<p>Swipe your card or scan your barcode to record an entry...</p>';
+      entryData.innerHTML =
+        '<p>Swipe your card or scan your barcode to record an entry...</p>';
       document.body.style.backgroundColor = '#00447c';
     }, 3000);
   }
@@ -273,16 +433,17 @@ async function scheduleHeartbeat() {
 }
 
 (async () => {
-  const config:config = await invoke('get_full_config');
+  const config: config = await invoke('get_full_config');
   console.log(config);
   if (config.first_run) {
-    await invoke('first_run_trigger')
+    await invoke('first_run_trigger');
   }
   await startHIDManager();
 
   // Initialize menu functionality
   initializeMenu();
   initializeManualEntry(); // Initialize manual entry functionality
+  initializeConfig(); // Initialize config modal functionality
 
   // Heartbeat cron task: every 10 +/- 5 minutes
   scheduleHeartbeat();
