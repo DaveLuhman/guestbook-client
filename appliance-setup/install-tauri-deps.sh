@@ -76,7 +76,6 @@ sudo apt install -y \
   gstreamer1.0-x \
   gstreamer1.0-alsa \
   gstreamer1.0-pulseaudio \
-  gstreamer1.0-dev \
   libgstreamer1.0-dev \
   libgstreamer-plugins-base1.0-dev \
   libgstreamer-plugins-bad1.0-dev \
