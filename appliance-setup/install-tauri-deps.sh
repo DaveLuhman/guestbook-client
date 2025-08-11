@@ -85,12 +85,6 @@ sudo apt install -y \
   libavutil-dev \
   libswresample-dev
 
-# Install additional GStreamer plugins that might be missing
-echo "🔌 Installing additional GStreamer plugins..."
-sudo apt install -y \
-  gstreamer1.0-plugins-base-apps \
-  gstreamer1.0-plugins-good-apps \
-  gstreamer1.0-plugins-bad-apps
 
 echo "✅ Tauri dependencies installation complete!"
 echo ""
