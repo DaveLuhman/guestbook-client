@@ -214,7 +214,16 @@ fn main() {
         // Additional WebKitGTK settings for better Linux compatibility
         std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
         std::env::set_var("WEBKIT_DISABLE_GPU_PROCESS", "1");
-
+        // GStreamer: make audio stable on headless Pi + fix plugin discovery
+        std::env::set_var("GST_AUDIO_SINK", "alsasink");
+        std::env::set_var(
+            "GST_PLUGIN_SYSTEM_PATH_1_0",
+            "/usr/lib/aarch64-linux-gnu/gstreamer-1.0",
+        );
+        std::env::set_var(
+            "GST_PLUGIN_SCANNER",
+            "/usr/lib/aarch64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner",
+        );
         // Alternative approach: You could also modify window creation in tauri.conf.json
         // to add "transparent: true" or other rendering hints if needed
     }
