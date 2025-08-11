@@ -52,6 +52,10 @@ fn start_barcode_listener(window: tauri::Window) -> Result<(), String> {
 #[tauri::command]
 fn start_magtek_listener(window: tauri::Window) -> Result<(), String> {
     log::info!("Attempting to start MagTek reader listener");
+    
+    // Give USB device time to be ready on Raspberry Pi
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    
     let api = hidapi::HidApi::new().map_err(|e| {
         log::error!("Failed to initialize HID API: {}", e);
         e.to_string()
