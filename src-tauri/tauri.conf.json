@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "guestbook-tauri-ts",
-  "version": "0.1.0",
-  "identifier": "com.adosoftware.guestbook-kiosk.app",
+  "productName": "guestbook",
+  "version": "1.0.0",
+  "identifier": "com.adosoftware.guestbook.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build:assets",
     "frontendDist": "../dist"
   },
   "app": {
@@ -47,7 +47,8 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "../public/firstRun.html"
+      "../public/firstRun.html",
+      "../public/styles.css"
     ],
     "linux": {
       "deb": {
