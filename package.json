@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "build:assets": "npx esbuild src/firstRun.ts --bundle --format=esm --outfile=dist/firstRun.js && mkdir -p dist && cp -a src/firstRun.html dist/ && cp -a src/styles.css dist/",
+    "build:assets": "npx esbuild src/firstRun.ts --bundle --format=esm --outfile=dist/firstRun.js && mkdir -p dist && cp -a public/firstRun.html dist/ && cp -a public/styles.css dist/",
     "preview": "vite preview",
     "tauri": "tauri",
     "first-run": "node appliance-setup/setup-wrapper.js first-run",
