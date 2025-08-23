@@ -1,0 +1,8 @@
+# Zebra / Symbol DS3208 (IBM keyboard wedge RS485 mode)
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="05e0", ATTRS{idProduct}=="0600", MODE="0666", GROUP="plugdev", SYMLINK+="zebra_scanner_%k"
+
+# Optional: Also match the input-event device (keyboard events)
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{idVendor}=="05e0", ATTRS{idProduct}=="0600", MODE="0666", GROUP="input", SYMLINK+="input/zebra_scanner"
+
+# MagTek SureSwipe
+ATTRS{idVendor}=="0801", ATTRS{idProduct}=="0002", MODE="666", GROUP="plugdev"

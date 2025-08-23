@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# First Run Setup Script for Guestbook Kiosk Client
+# First Run Setup Script for Guestbook client Client
 # This script performs the initial setup steps for the project
 
 set -e  # Exit on any error
 
-echo "🚀 Starting first-run setup for Guestbook Kiosk Client..."
+echo "🚀 Starting first-run setup for Guestbook client Client..."
 
 # Check if we're in the correct directory
 if [ ! -f "package.json" ]; then
@@ -46,33 +46,33 @@ fi
 
 # Clear existing installation to ensure clean state
 echo "🧹 Clearing existing installation..."
-sudo rm -rf /opt/guestbook-kiosk
+sudo rm -rf /opt/guestbook-client
 
 # Create the application directory
-sudo mkdir -p /opt/guestbook-kiosk
+sudo mkdir -p /opt/guestbook-client
 
-# Copy only the built application and necessary assets to /opt/guestbook-kiosk/
-echo "📦 Installing application to /opt/guestbook-kiosk/..."
-sudo cp -r src-tauri/target/release/guestbook-tauri-ts /opt/guestbook-kiosk/
-sudo cp -r dist /opt/guestbook-kiosk/
-sudo cp -r public /opt/guestbook-kiosk/
-sudo cp -r appliance-setup /opt/guestbook-kiosk/
-sudo cp README.md /opt/guestbook-kiosk/
-sudo chown -R $TARGET_USER:$TARGET_USER /opt/guestbook-kiosk/
+# Copy only the built application and necessary assets to /opt/guestbook-client/
+echo "📦 Installing application to /opt/guestbook-client/..."
+sudo cp -r src-tauri/target/release/guestbook-tauri-ts /opt/guestbook-client/
+sudo cp -r dist /opt/guestbook-client/
+sudo cp -r public /opt/guestbook-client/
+sudo cp -r appliance-setup /opt/guestbook-client/
+sudo cp README.md /opt/guestbook-client/
+sudo chown -R $TARGET_USER:$TARGET_USER /opt/guestbook-client/
 
 # Create systemd service file
 echo "⚙️ Creating systemd service..."
-sudo tee /etc/systemd/system/guestbook-kiosk.service > /dev/null <<EOF
+sudo tee /etc/systemd/system/guestbook-client.service > /dev/null <<EOF
 [Unit]
-Description=Guestbook Kiosk Client
+Description=Guestbook client Client
 After=network.target graphical-session.target
 Wants=network.target
 
 [Service]
 Type=simple
 User=$TARGET_USER
-WorkingDirectory=/opt/guestbook-kiosk
-ExecStart=/opt/guestbook-kiosk/src-tauri/target/release/guestbook-tauri-ts
+WorkingDirectory=/opt/guestbook-client
+ExecStart=/opt/guestbook-client/src-tauri/target/release/guestbook-tauri-ts
 Restart=always
 RestartSec=10
 Environment=DISPLAY=:0
@@ -84,11 +84,11 @@ EOF
 # Enable the service to start on boot
 echo "🔧 Enabling auto-start service..."
 sudo systemctl daemon-reload
-sudo systemctl enable guestbook-kiosk.service
+sudo systemctl enable guestbook-client.service
 
 echo "✅ First-run setup complete!"
 echo ""
-echo "🎉 Your Guestbook Kiosk Client is ready for development!"
+echo "🎉 Your Guestbook client Client is ready for development!"
 echo ""
 echo "📋 Next steps:"
 echo "1. Run: npm run dev (to start the development server)"
@@ -96,9 +96,9 @@ echo "2. Run: npm run tauri dev (to start the Tauri development environment)"
 echo "3. The application will now start automatically on system boot"
 echo ""
 echo "🔧 Service management:"
-echo "- Start service: sudo systemctl start guestbook-kiosk"
-echo "- Stop service: sudo systemctl stop guestbook-kiosk"
-echo "- Check status: sudo systemctl status guestbook-kiosk"
-echo "- View logs: sudo journalctl -u guestbook-kiosk -f"
+echo "- Start service: sudo systemctl start guestbook-client"
+echo "- Stop service: sudo systemctl stop guestbook-client"
+echo "- Check status: sudo systemctl status guestbook-client"
+echo "- View logs: sudo journalctl -u guestbook-client -f"
 echo ""
 echo "🔗 For more information, see the README.md file"

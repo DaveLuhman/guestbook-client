@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Cross-platform setup wrapper for Guestbook Kiosk Client
+ * Cross-platform setup wrapper for Guestbook Client
  * Consolidates setup logic and provides better platform compatibility
  */
 
@@ -11,13 +11,11 @@ import { platform } from 'node:os';
 
 // Configuration
 const CONFIG = {
-    appName: 'guestbook-kiosk',
-    installPath: '/opt/guestbook-kiosk',
-    serviceName: 'guestbook-kiosk',
+    appName: 'guestbook',
+    installPath: '/opt/guestbook',
+    serviceName: 'guestbook',
     requiredFiles: [
-        'src-tauri/target/release/guestbook-tauri-ts',
-        'dist',
-        'public',
+        'src-tauri/target/release/bundle/appimage/Guestbook.AppImage',
         'appliance-setup',
         'README.md'
     ]
@@ -51,20 +49,20 @@ function checkPrerequisites() {
 
     // Check Node.js
     if (!runCommand('node --version', { stdio: 'pipe' })) {
-        console.error('❌ Node.js is not installed');
+        console.log('💡 Run: ./appliance-setup/install-tauri-deps.sh to install dependencies before installing the service.');
         return false;
     }
 
     // Check npm
     if (!runCommand('npm --version', { stdio: 'pipe' })) {
-        console.error('❌ npm is not installed');
+        console.log('💡 Run: ./appliance-setup/install-tauri-deps.sh to install dependencies before installing the service.');
         return false;
     }
 
     // Check Rust (only on Linux/Mac)
     if ((IS.linux || IS.mac) && !runCommand('cargo --version', { stdio: 'pipe' })) {
         console.error('❌ Rust is not installed');
-        console.log('💡 Run: ./appliance-setup/install-tauri-deps.sh');
+        console.log('💡 Run: ./appliance-setup/install-tauri-deps.sh to install dependencies before installing the service.');
         return false;
     }
 
@@ -134,7 +132,7 @@ function setupLinuxService() {
 
     // Create systemd service
     const serviceContent = `[Unit]
-Description=Guestbook Kiosk Client
+Description=Guestbook Client
 After=network.target graphical-session.target
 Wants=network.target
 
@@ -142,7 +140,7 @@ Wants=network.target
 Type=simple
 User=${targetUser}
 WorkingDirectory=${CONFIG.installPath}
-ExecStart=${CONFIG.installPath}/src-tauri/target/release/guestbook-tauri-ts
+ExecStart=${CONFIG.installPath}/Guestbook.AppImage
 Restart=always
 RestartSec=10
 Environment=DISPLAY=:0
@@ -203,7 +201,7 @@ const COMMANDS = {
 function main() {
     const command = process.argv[2];
 
-    console.log('🚀 Guestbook Kiosk Client Setup');
+    console.log('🚀 Guestbook Client Setup');
     console.log(`📱 Platform: ${PLATFORM}`);
     console.log('');
 

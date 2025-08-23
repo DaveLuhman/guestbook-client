@@ -44,10 +44,12 @@ jobs:
               gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
               gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
               gstreamer1.0-libav
+            curl https://sh.rustup.rs -sSf | sh -s -- -y
+            source $HOME/.cargo/env
             cargo install tauri-cli
           run: |
             npm ci
-            cargo tauri build --bundles appimage,deb
+            cargo tauri build --bundles appimage
             ls -la src-tauri/target/release/bundle || true
 
       - name: Upload artifacts
@@ -56,4 +58,3 @@ jobs:
           name: guestbook-arm64
           path: |
             src-tauri/target/release/bundle/appimage/*arm64*.AppImage
-            src-tauri/target/release/bundle/deb/*arm64*.deb

@@ -40,8 +40,8 @@ sudo apt install -y \
 if ! command -v rustc &> /dev/null; then
     echo "🦀 Installing Rust..."
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    echo "ℹ️ Please restart your shell or log out and back in to update your environment for Rust (cargo) commands."
-    echo "💡 Alternatively, run: source ~/.cargo/env"
+    source ~/.cargo/env
+    echo "ℹ️ Rust installed successfully."
 else
     echo "✅ Rust is already installed"
 fi
@@ -49,8 +49,7 @@ fi
 # Install Node.js if not already installed
 if ! command -v node &> /dev/null; then
     echo "📦 Installing Node.js..."
-    curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-    sudo apt-get install -y nodejs
+    sudo apt-get install -y nodejs npm
 else
     echo "✅ Node.js is already installed"
 fi
@@ -89,9 +88,7 @@ sudo apt install -y \
 echo "✅ Tauri dependencies installation complete!"
 echo ""
 echo "📋 Next steps:"
-echo "1. Restart your terminal or run: source ~/.cargo/env"
-echo "2. Navigate to your project directory"
-echo "3. Run: npm install"
-echo "4. Run: npm run tauri dev"
+echo "1. Run: npm install"
+echo "2. Run: npm run tauri build"
 echo ""
 echo "🔗 For more information, visit: https://tauri.app/v1/guides/getting-started/setup/linux"

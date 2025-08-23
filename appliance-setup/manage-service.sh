@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Guestbook Kiosk Service Management Script
-# This script provides easy commands to manage the guestbook-kiosk systemd service
+# Guestbook Service Management Script
+# This script provides easy commands to manage the guestbook-client systemd service
 
-SERVICE_NAME="guestbook-kiosk"
+SERVICE_NAME="guestbook-client"
 
 # Function to check if service exists
 check_service() {
@@ -17,14 +17,14 @@ check_service() {
 
 # Function to show usage
 show_usage() {
-    echo "🔧 Guestbook Kiosk Service Management"
+    echo "🔧 Guestbook Service Management"
     echo ""
     echo "Usage: $0 [command]"
     echo ""
     echo "Commands:"
-    echo "  start     - Start the guestbook kiosk service"
-    echo "  stop      - Stop the guestbook kiosk service"
-    echo "  restart   - Restart the guestbook kiosk service"
+    echo "  start     - Start the guestbook service"
+    echo "  stop      - Stop the guestbook service"
+    echo "  restart   - Restart the guestbook service"
     echo "  status    - Show service status"
     echo "  logs      - Show service logs (follow mode)"
     echo "  enable    - Enable service to start on boot"
@@ -108,31 +108,29 @@ case "$1" in
 
         # Clear existing installation to ensure clean state
         echo "🧹 Clearing existing installation..."
-        rm -rf /opt/guestbook-kiosk
+        rm -rf /opt/guestbook-client
 
         # Create the application directory
-        mkdir -p /opt/guestbook-kiosk
+        mkdir -p /opt/guestbook-client
 
         # Copy only the built application and necessary assets
-        cp -r src-tauri/target/release/guestbook-tauri-ts /opt/guestbook-kiosk/
-        cp -r dist /opt/guestbook-kiosk/
-        cp -r public /opt/guestbook-kiosk/
-        cp -r appliance-setup /opt/guestbook-kiosk/
-        cp README.md /opt/guestbook-kiosk/
-        chown -R $TARGET_USER:$TARGET_USER /opt/guestbook-kiosk/
+        cp -r src-tauri/target/release/bundle/appimage/Guestbook.AppImage /opt/guestbook-client/
+        cp -r appliance-setup /opt/guestbook-client/
+        cp README.md /opt/guestbook-client/
+        chown -R $TARGET_USER:$TARGET_USER /opt/guestbook-client/
 
         # Create systemd service file
         tee /etc/systemd/system/$SERVICE_NAME.service > /dev/null <<EOF
 [Unit]
-Description=Guestbook Kiosk Client
+Description=Guestbook Client
 After=network.target graphical-session.target
 Wants=network.target
 
 [Service]
 Type=simple
 User=$TARGET_USER
-WorkingDirectory=/opt/guestbook-kiosk
-ExecStart=/opt/guestbook-kiosk/src-tauri/target/release/guestbook-tauri-ts
+WorkingDirectory=/opt/guestbook-client
+ExecStart=/opt/guestbook-client/Guestbook.AppImage
 Restart=always
 RestartSec=10
 Environment=DISPLAY=:0
@@ -159,7 +157,7 @@ EOF
         rm -f /etc/systemd/system/$SERVICE_NAME.service
 
         # Remove application files
-        rm -rf /opt/guestbook-kiosk
+        rm -rf /opt/guestbook-client
 
         # Reload systemd
         systemctl daemon-reload
