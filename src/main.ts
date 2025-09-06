@@ -1,3 +1,4 @@
+/** biome-ignore-all lint/suspicious/noExplicitAny: it's a display transformation, typing doesn't matter */
 import { invoke } from '@tauri-apps/api/core';
 import { errorHandler } from './error/errorHandler';
 import { startHIDManager } from './hid/HIDManager';
@@ -124,6 +125,24 @@ function initializeMenu() {
 
       closeMenu();
     }
+  });
+
+  // Add test device detection button
+  const testDeviceDetectionBtn = document.getElementById('test-device-detection-btn');
+  testDeviceDetectionBtn?.addEventListener('click', async () => {
+    console.log('Test Device Detection clicked');
+    soundManager.playBeep(700, 120);
+    try {
+      const result = await invoke('test_device_detection');
+      console.log('Device detection test result:', result);
+      alert(result); // Show the result in an alert for now
+    } catch (error) {
+      console.error('Test device detection failed:', error);
+      const errorMsg =
+        error instanceof Error ? error.message : 'Test device detection failed';
+      errorHandler.handleApplicationError('system', errorMsg, 'medium');
+    }
+    closeMenu();
   });
 
   // Add test logging button

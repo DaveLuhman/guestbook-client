@@ -31,7 +31,8 @@ pub async fn register_device(
         serde_json::from_str(&body).map_err(|e| format!("Failed to parse response JSON: {}", e))?;
     log::info!("Parsed JSON response: {}", json);
     let token = json
-        .get("token")
+        .get("data")
+        .and_then(|data| data.get("token"))
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
             log::error!("Token not found in response. Available keys: {:?}", json.as_object().map(|obj| obj.keys().collect::<Vec<_>>()));

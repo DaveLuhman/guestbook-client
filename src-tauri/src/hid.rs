@@ -1,6 +1,8 @@
 use hidapi::{DeviceInfo, HidApi};
 use std::sync::Mutex;
 
+pub mod manager;
+
 lazy_static::lazy_static! {
     static ref HID_API: Mutex<HidApi> = Mutex::new(HidApi::new().expect("Failed to init HID API"));
 }

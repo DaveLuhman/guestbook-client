@@ -1,9 +1,9 @@
 use hidapi::{HidApi, HidDevice};
 use std::time::{Duration, Instant};
-use tauri::{Emitter, Window};
+use tauri::{Emitter, WebviewWindow};
 use log::{info, warn, error};
 
-pub fn listen_to_barcode(device: HidDevice, window: Window) {
+pub fn listen_to_barcode(device: HidDevice, window: WebviewWindow) {
     info!("Starting barcode scanner listener thread");
     std::thread::spawn(move || {
         let mut buffer = [0u8; 64];
@@ -44,6 +44,11 @@ pub fn listen_to_barcode(device: HidDevice, window: Window) {
                     if consecutive_errors >= max_consecutive_errors {
                         error!("Barcode scanner failed after {} consecutive errors, stopping listener", max_consecutive_errors);
                         window.emit("hid-error", format!("Barcode scanner failed: {}", e)).ok();
+                        window.emit("device-status", serde_json::json!({
+                            "device": "barcode",
+                            "status": "error",
+                            "error": format!("Barcode scanner failed: {}", e)
+                        })).ok();
                         break;
                     }
 
@@ -56,18 +61,35 @@ pub fn listen_to_barcode(device: HidDevice, window: Window) {
 }
 
 pub fn open_symbol_scanner(api: &HidApi) -> Option<HidDevice> {
+    info!("Searching for barcode scanner...");
     for device in api.device_list() {
-        let vendor_match = device.vendor_id() == 0x05e0;
+        let vendor_id = device.vendor_id();
+        let product_id = device.product_id();
         let manufacturer = device.manufacturer_string().unwrap_or_default();
         let product = device.product_string().unwrap_or_default();
 
+        info!("Checking device: VID:{:04X} PID:{:04X} - {} - {}",
+              vendor_id, product_id, manufacturer, product);
+
+        let vendor_match = vendor_id == 0x05e0;
         let name_match = manufacturer.contains("Symbol")
             || manufacturer.contains("Zebra")
             || product.contains("Scanner");
 
         if vendor_match || name_match {
-            return api.open_path(device.path()).ok();
+            info!("Found potential barcode scanner: VID:{:04X} PID:{:04X} - {} - {}",
+                  vendor_id, product_id, manufacturer, product);
+            match api.open_path(device.path()) {
+                Ok(device) => {
+                    info!("Successfully opened barcode scanner");
+                    return Some(device);
+                }
+                Err(e) => {
+                    warn!("Failed to open barcode scanner: {}", e);
+                }
+            }
         }
     }
+    warn!("No barcode scanner found");
     None
 }

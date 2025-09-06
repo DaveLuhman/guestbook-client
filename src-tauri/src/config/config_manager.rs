@@ -19,7 +19,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            server_url: Some("https://guestbook-api.ep.ado.software/api/v1".to_string()),
+            server_url: Some("http://localhost:3001/api/v1".to_string()),
             server_token: None,
             device_id: Some(compute_device_id()),
             device_location: None,

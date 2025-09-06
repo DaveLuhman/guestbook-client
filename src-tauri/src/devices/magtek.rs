@@ -1,7 +1,7 @@
 use hidapi::{HidApi, HidDevice};
 use regex::Regex;
 use serde::Serialize;
-use tauri::{Emitter, Window};
+use tauri::{Emitter, WebviewWindow};
 use log::{info, warn, error};
 use std::time::Duration;
 
@@ -35,7 +35,7 @@ fn parse_card_data(data: &str) -> Option<CardData> {
     Some(CardData { onecard, name })
 }
 
-pub fn listen_to_magtek(device: HidDevice, window: Window) {
+pub fn listen_to_magtek(device: HidDevice, window: WebviewWindow) {
     info!("Starting MagTek reader listener thread");
     std::thread::spawn(move || {
         let mut buffer = [0u8; 256];
@@ -95,6 +95,11 @@ pub fn listen_to_magtek(device: HidDevice, window: Window) {
                     if consecutive_errors >= max_consecutive_errors {
                         error!("MagTek reader failed after {} consecutive errors, stopping listener", max_consecutive_errors);
                         window.emit("hid-error", format!("MagTek reader failed: {}", e)).ok();
+                        window.emit("device-status", serde_json::json!({
+                            "device": "msr",
+                            "status": "error",
+                            "error": format!("MagTek reader failed: {}", e)
+                        })).ok();
                         break;
                     }
 
@@ -107,19 +112,36 @@ pub fn listen_to_magtek(device: HidDevice, window: Window) {
 }
 
 pub fn open_magtek_reader(api: &HidApi) -> Option<HidDevice> {
+    info!("Searching for MagTek reader...");
     for device in api.device_list() {
-        let vendor_match = device.vendor_id() == 0x0801;
+        let vendor_id = device.vendor_id();
+        let product_id = device.product_id();
         let manufacturer = device.manufacturer_string().unwrap_or_default();
         let product = device.product_string().unwrap_or_default();
 
+        info!("Checking device: VID:{:04X} PID:{:04X} - {} - {}",
+              vendor_id, product_id, manufacturer, product);
+
+        let vendor_match = vendor_id == 0x0801;
         let name_match = manufacturer.contains("MagTek")
             || manufacturer.contains("Mag-Tek")
             || product.contains("MagTek");
 
         if vendor_match || name_match {
-            return api.open_path(device.path()).ok();
+            info!("Found potential MagTek device: VID:{:04X} PID:{:04X} - {} - {}",
+                  vendor_id, product_id, manufacturer, product);
+            match api.open_path(device.path()) {
+                Ok(device) => {
+                    info!("Successfully opened MagTek device");
+                    return Some(device);
+                }
+                Err(e) => {
+                    warn!("Failed to open MagTek device: {}", e);
+                }
+            }
         }
     }
+    warn!("No MagTek reader found");
     None
 }
 

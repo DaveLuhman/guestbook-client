@@ -9,6 +9,8 @@ use api::devices::{register_device, send_heartbeat};
 use config::config_manager::{get_full_config, ConfigManager};
 use devices::barcode::{listen_to_barcode, open_symbol_scanner};
 use devices::magtek::{listen_to_magtek, open_magtek_reader};
+use hid::manager::{HIDManager, DeviceConnectionState};
+use tauri::WebviewWindow;
 use tauri::Manager;
 
 use api::entries::{submit_entry, CardData};
@@ -19,9 +21,10 @@ fn get_hid_devices() -> Vec<String> {
         .into_iter()
         .map(|d| {
             format!(
-                "{}:{} - {} ({:?})",
+                "VID:{:04X} PID:{:04X} - {} - {} ({:?})",
                 d.vendor_id(),
                 d.product_id(),
+                d.manufacturer_string().unwrap_or("Unknown"),
                 d.product_string().unwrap_or("Unknown"),
                 d.path()
             )
@@ -29,7 +32,10 @@ fn get_hid_devices() -> Vec<String> {
         .collect()
 }
 #[tauri::command]
-fn start_barcode_listener(window: tauri::Window) -> Result<(), String> {
+fn start_barcode_listener(
+    window: WebviewWindow,
+    hid_manager: tauri::State<'_, HIDManager>,
+) -> Result<(), String> {
     log::info!("Attempting to start barcode scanner listener");
     let api = hidapi::HidApi::new().map_err(|e| {
         log::error!("Failed to initialize HID API: {}", e);
@@ -40,22 +46,36 @@ fn start_barcode_listener(window: tauri::Window) -> Result<(), String> {
         Some(device) => {
             log::info!("Barcode scanner found, starting listener");
             listen_to_barcode(device, window);
+
+            // Update HID manager status
+            {
+                let mut status = hid_manager.barcode_status.lock().unwrap();
+                status.state = DeviceConnectionState::Connected;
+                status.last_seen = Some(std::time::Instant::now());
+                status.error_count = 0;
+                status.last_error = None;
+            }
+
             Ok(())
         }
         None => {
             log::warn!("No compatible barcode scanner found");
+            hid_manager.mark_device_error("barcode", "No compatible barcode scanner found".to_string());
             Err("No compatible barcode scanner found.".into())
         }
     }
 }
 
 #[tauri::command]
-fn start_magtek_listener(window: tauri::Window) -> Result<(), String> {
+fn start_magtek_listener(
+    window: WebviewWindow,
+    hid_manager: tauri::State<'_, HIDManager>,
+) -> Result<(), String> {
     log::info!("Attempting to start MagTek reader listener");
-    
+
     // Give USB device time to be ready on Raspberry Pi
     std::thread::sleep(std::time::Duration::from_secs(2));
-    
+
     let api = hidapi::HidApi::new().map_err(|e| {
         log::error!("Failed to initialize HID API: {}", e);
         e.to_string()
@@ -65,10 +85,21 @@ fn start_magtek_listener(window: tauri::Window) -> Result<(), String> {
         Some(device) => {
             log::info!("MagTek reader found, starting listener");
             listen_to_magtek(device, window);
+
+            // Update HID manager status
+            {
+                let mut status = hid_manager.msr_status.lock().unwrap();
+                status.state = DeviceConnectionState::Connected;
+                status.last_seen = Some(std::time::Instant::now());
+                status.error_count = 0;
+                status.last_error = None;
+            }
+
             Ok(())
         }
         None => {
             log::warn!("No compatible MagTek reader found");
+            hid_manager.mark_device_error("msr", "No compatible MSR reader found".to_string());
             Err("No compatible MagTek reader found.".into())
         }
     }
@@ -164,6 +195,76 @@ async fn send_heartbeat_command(
 }
 
 #[tauri::command]
+fn get_device_status(hid_manager: tauri::State<'_, HIDManager>) -> Result<serde_json::Value, String> {
+    let barcode_status = hid_manager.get_barcode_status();
+    let msr_status = hid_manager.get_msr_status();
+
+    Ok(serde_json::json!({
+        "barcode": {
+            "connected": matches!(barcode_status.state, DeviceConnectionState::Connected),
+            "state": format!("{:?}", barcode_status.state),
+            "error_count": barcode_status.error_count,
+            "last_error": barcode_status.last_error,
+            "last_seen": barcode_status.last_seen.map(|t| t.elapsed().as_secs())
+        },
+        "msr": {
+            "connected": matches!(msr_status.state, DeviceConnectionState::Connected),
+            "state": format!("{:?}", msr_status.state),
+            "error_count": msr_status.error_count,
+            "last_error": msr_status.last_error,
+            "last_seen": msr_status.last_seen.map(|t| t.elapsed().as_secs())
+        }
+    }))
+}
+
+#[tauri::command]
+fn get_barcode_connected(hid_manager: tauri::State<'_, HIDManager>) -> bool {
+    hid_manager.get_barcode_connected()
+}
+
+#[tauri::command]
+fn get_msr_connected(hid_manager: tauri::State<'_, HIDManager>) -> bool {
+    hid_manager.get_msr_connected()
+}
+
+#[tauri::command]
+fn test_device_detection() -> Result<String, String> {
+    let api = hidapi::HidApi::new().map_err(|e| format!("Failed to initialize HID API: {}", e))?;
+
+    let mut result = String::new();
+    result.push_str("=== HID Device Detection Test ===\n\n");
+
+    // Test barcode scanner detection
+    result.push_str("Testing barcode scanner detection:\n");
+    match open_symbol_scanner(&api) {
+        Some(_) => result.push_str("✓ Barcode scanner found and opened\n"),
+        None => result.push_str("✗ No barcode scanner found\n"),
+    }
+
+    // Test MSR reader detection
+    result.push_str("\nTesting MSR reader detection:\n");
+    match open_magtek_reader(&api) {
+        Some(_) => result.push_str("✓ MSR reader found and opened\n"),
+        None => result.push_str("✗ No MSR reader found\n"),
+    }
+
+    // List all devices
+    result.push_str("\nAll HID devices:\n");
+    for device in api.device_list() {
+        result.push_str(&format!(
+            "VID:{:04X} PID:{:04X} - {} - {} ({:?})\n",
+            device.vendor_id(),
+            device.product_id(),
+            device.manufacturer_string().unwrap_or("Unknown"),
+            device.product_string().unwrap_or("Unknown"),
+            device.path()
+        ));
+    }
+
+    Ok(result)
+}
+
+#[tauri::command]
 async fn log_error(
     level: String,
     source: String,
@@ -245,16 +346,24 @@ fn main() {
         log::info!("Logging system initialized successfully");
     }
 
+    // Initialize HID manager
+    let hid_manager = HIDManager::new();
+
     #[cfg(debug_assertions)]
     {
         builder = builder.plugin(devtools);
     }
     builder
         .manage(config_manager)
+        .manage(hid_manager)
         .invoke_handler(tauri::generate_handler![
             get_hid_devices,
             start_barcode_listener,
             start_magtek_listener,
+            get_device_status,
+            get_barcode_connected,
+            get_msr_connected,
+            test_device_detection,
             first_run_trigger,
             get_full_config,
             submit_first_run_config,
@@ -266,6 +375,21 @@ fn main() {
             submit_barcode_entry,
             submit_manual_entry,
         ])
+        .setup(|app| {
+            // Get the main window and HID manager
+            let window = app.get_webview_window("main").unwrap();
+            let hid_manager = app.state::<HIDManager>();
+
+            // Set the window in the HID manager
+            hid_manager.set_window(window.clone());
+
+            // Start initial device connection and monitoring
+            if let Err(e) = hid_manager.start_initial_connection() {
+                log::error!("Failed to start HID device monitoring: {}", e);
+            }
+
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running Tauri application");
 }
