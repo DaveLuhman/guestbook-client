@@ -134,9 +134,14 @@ function setupDeviceStatusMonitoring() {
 		// Show user-friendly messages for important status changes
 		if (status === "connected") {
 			console.log(`${device} device connected successfully`);
+			// Clear any previous error messages when device reconnects
+			clearDeviceErrorMessage(device);
 		} else if (status === "error") {
 			const errorMsg = error || `${device} device error`;
 			errorHandler.handleApplicationError(device, errorMsg, "medium");
+		} else if (status === "disconnected") {
+			// Show user-friendly disconnection message
+			showDeviceDisconnectedMessage(device);
 		} else if (status === "connecting") {
 			console.log(`${device} device attempting to connect...`);
 		}
@@ -188,9 +193,69 @@ function updateDeviceStatusIndicator(device: "barcode" | "msr", status: string, 
 			indicator.title = `${device} device error: ${error || "Unknown error"}`;
 			break;
 
+		case "disconnected":
+			indicator.style.backgroundColor = "#aa0000";
+			indicator.title = `${device} device disconnected - please check connection`;
+			break;
 		default:
 			indicator.style.backgroundColor = "#666666";
 			indicator.title = `${device} device disconnected`;
 			break;
+	}
+}
+
+// Show user-friendly disconnection message
+function showDeviceDisconnectedMessage(device: "barcode" | "msr") {
+	const entryData = document.getElementById('entry-data');
+	if (entryData) {
+		const deviceName = device === "msr" ? "Card Reader" : "Barcode Scanner";
+		const instructions = device === "msr"
+			? "Please check that the card reader is properly connected via USB and try again."
+			: "Please check that the barcode scanner is properly connected via USB and try again.";
+
+		entryData.innerHTML = `
+			<div class="device-disconnected-message">
+				<p><strong>${deviceName} Disconnected</strong></p>
+				<p>${instructions}</p>
+				<p class="reconnect-hint">The device will reconnect automatically when plugged back in.</p>
+			</div>
+		`;
+
+		// Add CSS styling for the message
+		const style = document.createElement('style');
+		style.textContent = `
+			.device-disconnected-message {
+				text-align: center;
+				padding: 20px;
+				background-color: #ffe6e6;
+				border: 2px solid #ff6666;
+				border-radius: 8px;
+				margin: 20px;
+			}
+			.device-disconnected-message p {
+				margin: 10px 0;
+			}
+			.reconnect-hint {
+				font-style: italic;
+				color: #666;
+				font-size: 0.9em;
+			}
+		`;
+		if (!document.querySelector('style[data-device-disconnect]')) {
+			style.setAttribute('data-device-disconnect', 'true');
+			document.head.appendChild(style);
+		}
+	}
+}
+
+// Clear device error message when device reconnects
+function clearDeviceErrorMessage(_device: "barcode" | "msr") {
+	const entryData = document.getElementById('entry-data');
+	if (entryData) {
+		// Check if we're showing a device disconnected message
+		const disconnectedMessage = entryData.querySelector('.device-disconnected-message');
+		if (disconnectedMessage) {
+			entryData.innerHTML = '<p>Swipe your card or scan your barcode to record an entry...</p>';
+		}
 	}
 }

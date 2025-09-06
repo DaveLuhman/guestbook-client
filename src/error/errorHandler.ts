@@ -170,10 +170,16 @@ export class ErrorHandler {
   private updateErrorDisplay(context: ErrorContext) {
     const entryData = document.getElementById('entry-data');
     if (entryData) {
+      // Create user-friendly error message based on source and message
+      const friendlyMessage = this.createFriendlyErrorMessage(context);
+
+      // Add CSS styling for device error messages
+      this.addDeviceErrorStyles();
+
       // Use CSS classes instead of inline styles
-      const errorElement = document.createElement('p');
+      const errorElement = document.createElement('div');
       errorElement.className = `error-message ${context.severity}`;
-      errorElement.textContent = `Device Error: ${context.message}`;
+      errorElement.innerHTML = friendlyMessage;
 
       // Clear and append the new element
       entryData.innerHTML = '';
@@ -181,16 +187,102 @@ export class ErrorHandler {
 
       // Don't change body background color - it makes text unreadable
 
-      // Reset after 5 seconds
+      // Reset after 8 seconds for device errors (longer for user to read)
+      const resetTime = context.source === 'barcode' || context.source === 'magtek' ? 8000 : 5000;
       setTimeout(() => {
-        if (entryData.querySelector('p')?.textContent?.includes('Device Error:')) {
+        if (entryData.querySelector('.error-message')) {
           entryData.innerHTML = '<p>Swipe your card or scan your barcode to record an entry...</p>';
         }
-      }, 5000);
+      }, resetTime);
     }
   }
 
+  private createFriendlyErrorMessage(context: ErrorContext): string {
+    const { source, message } = context;
 
+    // Handle device-specific errors with user-friendly messages
+    if (source === 'magtek') {
+      if (message.includes('No compatible MSR reader found') || message.includes('not found')) {
+        return `
+          <div class="device-error-message">
+            <p><strong>Card Reader Not Found</strong></p>
+            <p>Please check that the card reader is properly connected via USB.</p>
+            <p class="error-hint">Make sure the USB cable is securely plugged in and try again.</p>
+          </div>
+        `;
+      }
+      if (message.includes('disconnected')) {
+        return `
+          <div class="device-error-message">
+            <p><strong>Card Reader Disconnected</strong></p>
+            <p>Please check the USB connection and try again.</p>
+            <p class="error-hint">The device will reconnect automatically when plugged back in.</p>
+          </div>
+        `;
+      }
+    }
+
+    if (source === 'barcode') {
+      if (message.includes('No compatible') || message.includes('not found')) {
+        return `
+          <div class="device-error-message">
+            <p><strong>Barcode Scanner Not Found</strong></p>
+            <p>Please check that the barcode scanner is properly connected via USB.</p>
+            <p class="error-hint">Make sure the USB cable is securely plugged in and try again.</p>
+          </div>
+        `;
+      }
+      if (message.includes('disconnected')) {
+        return `
+          <div class="device-error-message">
+            <p><strong>Barcode Scanner Disconnected</strong></p>
+            <p>Please check the USB connection and try again.</p>
+            <p class="error-hint">The device will reconnect automatically when plugged back in.</p>
+          </div>
+        `;
+      }
+    }
+
+    // Fallback for other errors
+    return `
+      <div class="device-error-message">
+        <p><strong>Device Error</strong></p>
+        <p>${message}</p>
+        <p class="error-hint">Please check the device connection and try again.</p>
+      </div>
+    `;
+  }
+
+  private addDeviceErrorStyles() {
+    // Only add styles once
+    if (document.querySelector('style[data-device-error]')) return;
+
+    const style = document.createElement('style');
+    style.setAttribute('data-device-error', 'true');
+    style.textContent = `
+      .device-error-message {
+        text-align: center;
+        padding: 20px;
+        background-color: #ffe6e6;
+        border: 2px solid #ff6666;
+        border-radius: 8px;
+        margin: 20px;
+      }
+      .device-error-message p {
+        margin: 10px 0;
+      }
+      .device-error-message strong {
+        color: #cc0000;
+        font-size: 1.1em;
+      }
+      .error-hint {
+        font-style: italic;
+        color: #666;
+        font-size: 0.9em;
+      }
+    `;
+    document.head.appendChild(style);
+  }
 
   // Public method to handle errors from other parts of the application
   public handleApplicationError(
