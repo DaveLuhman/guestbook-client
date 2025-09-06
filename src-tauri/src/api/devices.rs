@@ -8,30 +8,35 @@ pub async fn register_device(
 ) -> Result<(), String> {
     let config = get_full_config(config_manager.clone());
     let register_url = format!("{}/devices/register", config.server_url.clone().unwrap());
+    let request_body = json!({
+        "name": config.device_friendly_name,
+        "location": config.device_location,
+        "id": config.device_id,
+    });
+    log::info!("Registering device with URL: {}", register_url);
+    log::info!("Request body: {}", serde_json::to_string_pretty(&request_body).unwrap());
     let client = reqwest::Client::new();
     let response = client
         .post(register_url)
         .header("Content-Type", "application/json")
-        .body(
-            serde_json::to_string(&json!({
-                "name": config.device_friendly_name,
-                "location": config.device_location,
-                "id": config.device_id,
-            }))
-            .unwrap(),
-        )
+        .body(serde_json::to_string(&request_body).unwrap())
         .send()
         .await;
     if response.is_err() {
         return Err(response.err().unwrap().to_string());
     }
     let body = response.unwrap().text().await.unwrap();
+    log::info!("Server response body: {}", body);
     let json: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("Failed to parse response JSON: {}", e))?;
+    log::info!("Parsed JSON response: {}", json);
     let token = json
         .get("token")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| "Token not found in response".to_string())?
+        .ok_or_else(|| {
+            log::error!("Token not found in response. Available keys: {:?}", json.as_object().map(|obj| obj.keys().collect::<Vec<_>>()));
+            "Token not found in response".to_string()
+        })?
         .to_owned();
     config_manager.set_server_token(token.clone());
     Ok(())
