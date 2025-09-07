@@ -147,8 +147,8 @@ function setupDeviceStatusMonitoring() {
 		}
 	});
 
-	// Periodically check device status (every 30 seconds)
-	setInterval(checkDeviceStatus, 30000);
+	// Periodically check device status (every 15 seconds)
+	setInterval(checkDeviceStatus, 15000);
 }
 
 // Update device status display in the UI

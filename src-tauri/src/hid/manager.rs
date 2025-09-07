@@ -1,7 +1,7 @@
 use crate::devices::barcode::{listen_to_barcode, open_symbol_scanner};
 use crate::devices::magtek::{listen_to_magtek, open_magtek_reader};
 use hidapi::HidApi;
-use log::{info, warn, error, debug};
+use log::{info, warn};
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -15,7 +15,6 @@ use std::thread;
 pub enum DeviceConnectionState {
     Connected,
     Disconnected,
-    Connecting,
     Error(String),
 }
 
@@ -42,8 +41,6 @@ pub struct HIDManager {
     pub barcode_status: Arc<Mutex<DeviceStatus>>,
     pub msr_status: Arc<Mutex<DeviceStatus>>,
     pub window: Arc<Mutex<Option<WebviewWindow>>>,
-    pub reconnect_interval: Duration,
-    pub max_reconnect_attempts: u32,
 }
 
 impl HIDManager {
@@ -52,8 +49,6 @@ impl HIDManager {
             barcode_status: Arc::new(Mutex::new(DeviceStatus::default())),
             msr_status: Arc::new(Mutex::new(DeviceStatus::default())),
             window: Arc::new(Mutex::new(None)),
-            reconnect_interval: Duration::from_secs(5),
-            max_reconnect_attempts: 10,
         }
     }
 
@@ -84,81 +79,52 @@ impl HIDManager {
         let barcode_status = Arc::clone(&self.barcode_status);
         let msr_status = Arc::clone(&self.msr_status);
         let window = Arc::clone(&self.window);
-        let reconnect_interval = self.reconnect_interval;
-        let max_attempts = self.max_reconnect_attempts;
 
         // Start monitoring thread
         std::thread::spawn(move || {
-            info!("Starting HID device monitoring thread");
-            let mut reconnect_count = 0u32;
-
             loop {
-                // Check barcode scanner
-                {
-                    let mut barcode = barcode_status.lock().unwrap();
-                    if !matches!(barcode.state, DeviceConnectionState::Connected) {
-                        debug!("Barcode scanner not connected, attempting reconnection...");
-                        barcode.state = DeviceConnectionState::Connecting;
+                // Check if both devices are connected
+                let both_connected = {
+                    let barcode = barcode_status.lock().unwrap();
+                    let msr = msr_status.lock().unwrap();
+                    matches!(barcode.state, DeviceConnectionState::Connected) &&
+                    matches!(msr.state, DeviceConnectionState::Connected)
+                };
 
-                        if let Some(window) = window.lock().unwrap().as_ref() {
-                            window.emit("device-status", serde_json::json!({
-                                "device": "barcode",
-                                "status": "connecting"
-                            })).ok();
-                        }
-                    }
+                if both_connected {
+                    // Both devices connected - no need to check frequently
+                    std::thread::sleep(Duration::from_secs(60)); // Check every minute when both connected
+                    continue;
                 }
 
-                // Check MSR reader
-                {
-                    let mut msr = msr_status.lock().unwrap();
-                    if !matches!(msr.state, DeviceConnectionState::Connected) {
-                        debug!("MSR reader not connected, attempting reconnection...");
-                        msr.state = DeviceConnectionState::Connecting;
-
-                        if let Some(window) = window.lock().unwrap().as_ref() {
-                            window.emit("device-status", serde_json::json!({
-                                "device": "msr",
-                                "status": "connecting"
-                            })).ok();
-                        }
-                    }
-                }
-
-                // Attempt to reconnect devices
+                // One or both devices missing - check every 15 seconds
                 let api = match HidApi::new() {
                     Ok(api) => api,
-                    Err(e) => {
-                        error!("Failed to initialize HID API for reconnection: {}", e);
-                        std::thread::sleep(reconnect_interval);
+                    Err(_) => {
+                        std::thread::sleep(Duration::from_secs(15));
                         continue;
                     }
                 };
 
-                // Try to reconnect barcode scanner
-                let barcode_success = Self::attempt_reconnect_barcode_static(&barcode_status, &api, &window).is_ok();
-                if barcode_success {
-                    info!("Barcode scanner reconnected successfully");
-                }
-
-                // Try to reconnect MSR reader
-                let msr_success = Self::attempt_reconnect_msr_static(&msr_status, &api, &window).is_ok();
-                if msr_success {
-                    info!("MSR reader reconnected successfully");
-                }
-
-                // Only count as failure if both devices fail AND we've been trying for a while
-                if !barcode_success && !msr_success {
-                    reconnect_count += 1;
-                    if reconnect_count >= max_attempts {
-                        error!("Max reconnection attempts reached for both devices, stopping monitoring");
-                        break;
+                // Try to reconnect barcode scanner if not connected
+                {
+                    let barcode = barcode_status.lock().unwrap();
+                    if !matches!(barcode.state, DeviceConnectionState::Connected) {
+                        drop(barcode); // Release lock before calling reconnect
+                        Self::attempt_reconnect_barcode_static(&barcode_status, &api, &window).ok();
                     }
-                } else {
-                    reconnect_count = 0; // Reset on any successful reconnection
                 }
 
-                std::thread::sleep(reconnect_interval);
+                // Try to reconnect MSR reader if not connected
+                {
+                    let msr = msr_status.lock().unwrap();
+                    if !matches!(msr.state, DeviceConnectionState::Connected) {
+                        drop(msr); // Release lock before calling reconnect
+                        Self::attempt_reconnect_msr_static(&msr_status, &api, &window).ok();
+                    }
+                }
+
+                std::thread::sleep(Duration::from_secs(15));
             }
         });
     }
@@ -189,7 +155,6 @@ impl HIDManager {
 
         match open_symbol_scanner(api) {
             Some(device) => {
-                info!("Barcode scanner reconnected successfully");
                 barcode.state = DeviceConnectionState::Connected;
                 barcode.last_seen = Some(Instant::now());
                 barcode.error_count = 0;
@@ -229,7 +194,6 @@ impl HIDManager {
 
         match open_magtek_reader(api) {
             Some(device) => {
-                info!("MSR reader reconnected successfully");
                 msr.state = DeviceConnectionState::Connected;
                 msr.last_seen = Some(Instant::now());
                 msr.error_count = 0;
@@ -265,7 +229,6 @@ impl HIDManager {
 
         match open_symbol_scanner(api) {
             Some(device) => {
-                info!("Barcode scanner reconnected successfully");
                 barcode.state = DeviceConnectionState::Connected;
                 barcode.last_seen = Some(Instant::now());
                 barcode.error_count = 0;
@@ -301,7 +264,6 @@ impl HIDManager {
 
         match open_magtek_reader(api) {
             Some(device) => {
-                info!("MSR reader reconnected successfully");
                 msr.state = DeviceConnectionState::Connected;
                 msr.last_seen = Some(Instant::now());
                 msr.error_count = 0;
@@ -332,14 +294,10 @@ impl HIDManager {
         let api = HidApi::new().map_err(|e| format!("Failed to initialize HID API: {}", e))?;
 
         // Try to connect barcode scanner (don't fail if not found)
-        if let Err(e) = self.attempt_reconnect_barcode(&api) {
-            warn!("Barcode scanner not available during startup: {}", e);
-        }
+        self.attempt_reconnect_barcode(&api).ok();
 
         // Try to connect MSR reader (don't fail if not found)
-        if let Err(e) = self.attempt_reconnect_msr(&api) {
-            warn!("MSR reader not available during startup: {}", e);
-        }
+        self.attempt_reconnect_msr(&api).ok();
 
         // Start monitoring for disconnections
         self.start_device_monitoring();
@@ -375,7 +333,6 @@ impl HIDManager {
         let window = Arc::clone(&self.window);
 
         thread::spawn(move || {
-            info!("Starting USB hot-plug monitoring for Linux");
             Self::efficient_polling_monitoring(barcode_status, msr_status, window);
         });
     }
@@ -403,8 +360,7 @@ impl HIDManager {
                             .map(|d| (d.vendor_id(), d.product_id()))
                             .collect::<std::collections::HashSet<_>>()
                     }
-                    Err(e) => {
-                        warn!("Failed to get HID device list for hot-plug monitoring: {}", e);
+                    Err(_) => {
                         std::collections::HashSet::new()
                     }
                 };
@@ -412,7 +368,6 @@ impl HIDManager {
                 // Check for new devices
                 for (vendor_id, product_id) in &current_devices {
                     if !last_devices.contains(&(*vendor_id, *product_id)) {
-                        info!("New HID device detected: VID:{:04X} PID:{:04X}", vendor_id, product_id);
 
                         // Check if this matches our target devices
                         let is_barcode = *vendor_id == 0x05e0 ||
@@ -421,8 +376,6 @@ impl HIDManager {
                                    Self::is_msr_device(*vendor_id, *product_id);
 
                         if is_barcode || is_msr {
-                            info!("Target device detected, attempting immediate connection");
-
                             // Give the device a moment to be ready
                             std::thread::sleep(Duration::from_millis(200));
 
@@ -442,7 +395,6 @@ impl HIDManager {
                 // Check for removed devices
                 for (vendor_id, product_id) in &last_devices {
                     if !current_devices.contains(&(*vendor_id, *product_id)) {
-                        info!("HID device removed: VID:{:04X} PID:{:04X}", vendor_id, product_id);
 
                         // Mark as disconnected if it was one of our target devices
                         let is_barcode = *vendor_id == 0x05e0 ||

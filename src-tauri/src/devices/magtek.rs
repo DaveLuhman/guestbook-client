@@ -2,7 +2,7 @@ use hidapi::{HidApi, HidDevice};
 use regex::Regex;
 use serde::Serialize;
 use tauri::{Emitter, WebviewWindow};
-use log::{info, warn, error};
+use log::warn;
 use std::time::Duration;
 
 lazy_static::lazy_static! {
@@ -36,7 +36,7 @@ fn parse_card_data(data: &str) -> Option<CardData> {
 }
 
 pub fn listen_to_magtek(device: HidDevice, window: WebviewWindow) {
-    info!("Starting MagTek reader listener thread");
+    // Starting MagTek reader listener thread
     std::thread::spawn(move || {
         let mut buffer = [0u8; 256];
         let mut scan_buffer = String::new();
@@ -79,7 +79,7 @@ pub fn listen_to_magtek(device: HidDevice, window: WebviewWindow) {
                         let track1 = &scan_buffer[..=end];
                         let cleaned = track1.trim();
                         if let Some(card) = parse_card_data(cleaned) {
-                            info!("MagTek card swiped: {} - {}", card.onecard, card.name);
+                            // MagTek card swiped: {} - {}
                             window.emit("magtek-data", card).ok();
                         } else {
                             warn!("MagTek swipe data could not be parsed: {}", cleaned);
@@ -93,7 +93,7 @@ pub fn listen_to_magtek(device: HidDevice, window: WebviewWindow) {
                     warn!("MagTek reader read error (attempt {}/{}): {}", consecutive_errors, max_consecutive_errors, e);
 
                     if consecutive_errors >= max_consecutive_errors {
-                        error!("MagTek reader failed after {} consecutive errors, stopping listener", max_consecutive_errors);
+                        // MagTek reader failed after too many consecutive errors, stopping listener
                         window.emit("hid-error", format!("MagTek reader failed: {}", e)).ok();
                         window.emit("device-status", serde_json::json!({
                             "device": "msr",
@@ -112,15 +112,15 @@ pub fn listen_to_magtek(device: HidDevice, window: WebviewWindow) {
 }
 
 pub fn open_magtek_reader(api: &HidApi) -> Option<HidDevice> {
-    info!("Searching for MagTek reader...");
+    // Searching for MagTek reader
     for device in api.device_list() {
         let vendor_id = device.vendor_id();
-        let product_id = device.product_id();
+        let _product_id = device.product_id();
         let manufacturer = device.manufacturer_string().unwrap_or_default();
         let product = device.product_string().unwrap_or_default();
 
-        info!("Checking device: VID:{:04X} PID:{:04X} - {} - {}",
-              vendor_id, product_id, manufacturer, product);
+        // Checking device: VID:{:04X} PID:{:04X} - {} - {}
+        // vendor_id, product_id, manufacturer, product);
 
         let vendor_match = vendor_id == 0x0801;
         let name_match = manufacturer.contains("MagTek")
@@ -128,11 +128,11 @@ pub fn open_magtek_reader(api: &HidApi) -> Option<HidDevice> {
             || product.contains("MagTek");
 
         if vendor_match || name_match {
-            info!("Found potential MagTek device: VID:{:04X} PID:{:04X} - {} - {}",
-                  vendor_id, product_id, manufacturer, product);
+            // Found potential MagTek device: VID:{:04X} PID:{:04X} - {} - {}
+            // vendor_id, product_id, manufacturer, product);
             match api.open_path(device.path()) {
                 Ok(device) => {
-                    info!("Successfully opened MagTek device");
+                    // Successfully opened MagTek device
                     return Some(device);
                 }
                 Err(e) => {
