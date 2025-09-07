@@ -336,7 +336,7 @@ fn main() {
     #[cfg(debug_assertions)] // only enable instrumentation in development builds
     let devtools = tauri_plugin_devtools::init();
 
-    let mut builder = tauri::Builder::default().plugin(tauri_plugin_http::init());
+    let builder = tauri::Builder::default().plugin(tauri_plugin_http::init());
 
     // Initialize logging before creating the app
     let config_manager = ConfigManager::new();
