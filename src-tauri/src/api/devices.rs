@@ -43,6 +43,48 @@ pub async fn register_device(
     Ok(())
 }
 
+pub async fn reset_device(
+    config_manager: tauri::State<'_, ConfigManager>,
+) -> Result<(), String> {
+    let config = get_full_config(config_manager.clone());
+    let device_id = config.device_id.clone().unwrap();
+    let server_url = config.server_url.clone().unwrap();
+    let server_token = config.server_token.clone().unwrap();
+
+    // First, call the DELETE /devices/{device_id} endpoint to retire the device
+    let delete_url = format!("{}/devices/{}", server_url, device_id);
+    let client = reqwest::Client::new();
+
+    log::info!("Retiring device with URL: {}", delete_url);
+
+    let response = client
+        .delete(delete_url)
+        .header("Authorization", format!("Bearer {}", server_token))
+        .send()
+        .await;
+
+    if response.is_err() {
+        let error = response.err().unwrap();
+        log::error!("Failed to retire device: {}", error);
+        return Err(format!("Failed to retire device: {}", error));
+    }
+
+    let status = response.unwrap().status();
+    if !status.is_success() {
+        let error_msg = format!("Server returned error status: {}", status);
+        log::error!("{}", error_msg);
+        return Err(error_msg);
+    }
+
+    log::info!("Device successfully retired from server");
+
+    // Then, reset the first_run flag to true
+    config_manager.set_first_run(true);
+    log::info!("Device reset: first_run set to true");
+
+    Ok(())
+}
+
 pub async fn send_heartbeat(config_manager: tauri::State<'_, ConfigManager>) -> Result<(), String> {
     let config = get_full_config(config_manager.clone());
     let device_id = config.device_id.clone().unwrap();

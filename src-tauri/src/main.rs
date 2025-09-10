@@ -5,7 +5,7 @@ mod config;
 mod devices;
 mod hid;
 mod logging;
-use api::devices::{register_device, send_heartbeat};
+use api::devices::{register_device, send_heartbeat, reset_device};
 use config::config_manager::{get_full_config, ConfigManager};
 use devices::barcode::{listen_to_barcode, open_symbol_scanner};
 use devices::magtek::{listen_to_magtek, open_magtek_reader};
@@ -312,6 +312,23 @@ async fn restart_appliance(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+async fn reset_device_command(
+    config_manager: tauri::State<'_, ConfigManager>,
+) -> Result<(), String> {
+    log::info!("Reset device command received");
+    match reset_device(config_manager).await {
+        Ok(_) => {
+            log::info!("Device reset completed successfully");
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("Device reset failed: {}", e);
+            Err(e)
+        }
+    }
+}
+
 fn main() {
     // Set WebKitGTK compositing mode to disabled on Linux to prevent image artifacting
     #[cfg(target_os = "linux")]
@@ -371,6 +388,7 @@ fn main() {
             log_error,
             test_logging,
             restart_appliance,
+            reset_device_command,
             submit_swipe_entry,
             submit_barcode_entry,
             submit_manual_entry,

@@ -35,9 +35,8 @@
       <h2 id="menu-title" class="sr-only">Menu Options</h2>
       <button class="menu-button" id="manual-entry-btn">Manual Entry</button>
       <button class="menu-button" id="show-config-btn">Show Config</button>
-      <button class="menu-button" id="test-device-detection-btn">Test Device Detection</button>
+      <button class="menu-button" id="reset-device-btn">Reset Device</button>
       <button class="menu-button" id="restart-appliance-btn">Restart Appliance</button>
-      <button class="menu-button" id="test-logging-btn">Test Logging</button>
     </div>
   </div>
 
@@ -115,6 +114,27 @@
           <label>Server Token:</label>
           <span id="config-server-token">Loading...</span>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reset Device Confirmation Modal -->
+  <div class="reset-confirmation-modal" id="reset-confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="reset-confirmation-title" tabindex="-1">
+    <div class="reset-confirmation-content">
+      <div class="modal-header">
+        <h2 id="reset-confirmation-title">Reset Device</h2>
+        <button class="close-x-btn" id="close-reset-confirmation-btn" aria-label="Close reset confirmation"><span class="material-symbols-outlined">
+            close
+          </span></button>
+      </div>
+      <div class="reset-warning-section">
+        <p><strong>Warning:</strong> This action will reset the device and mark it as retired on the server.</p>
+        <p>The device will need to be re-enrolled after reset.</p>
+        <p>Are you sure you want to continue?</p>
+      </div>
+      <div class="reset-action-buttons">
+        <button class="action-btn cancel-btn" id="cancel-reset-btn">Cancel</button>
+        <button class="action-btn confirm-reset-btn" id="confirm-reset-btn">Reset Device</button>
       </div>
     </div>
   </div>

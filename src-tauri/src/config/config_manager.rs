@@ -121,6 +121,10 @@ impl ConfigManager {
     pub fn set_server_token(&self, server_token: String) {
         self.set(server_token, |c, v| c.server_token = Some(v));
     }
+
+    pub fn set_first_run(&self, first_run: bool) {
+        self.set(first_run, |c, v| c.first_run = v);
+    }
 }
 
 // Optionally, you can provide a global singleton instance using lazy_static or once_cell
