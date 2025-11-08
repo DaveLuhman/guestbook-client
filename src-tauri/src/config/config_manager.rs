@@ -54,12 +54,12 @@ impl ConfigManager {
 
     fn resolve_config_path() -> PathBuf {
         // Try to use a platform-specific user data directory, fallback to home
-        if let Some(proj_dirs) = directories::ProjectDirs::from("com", "wolfpack", "guestbook") {
-            proj_dirs.config_dir().join("wg_config.json")
+        if let Some(proj_dirs) = directories::ProjectDirs::from("com", "adosoftware", "guestbook") {
+            proj_dirs.config_dir().join("gb_config.json")
         } else if let Some(home) = dirs::home_dir() {
-            home.join(".wolfpack-guestbook").join("wg_config.json")
+            home.join(".adosoftware-guestbook").join("gb_config.json")
         } else {
-            PathBuf::from("wg_config.json")
+            PathBuf::from("gb_config.json")
         }
     }
 
