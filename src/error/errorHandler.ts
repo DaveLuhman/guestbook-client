@@ -200,6 +200,75 @@ export class ErrorHandler {
   private createFriendlyErrorMessage(context: ErrorContext): string {
     const { source, message } = context;
 
+    // Handle network-specific errors with user-friendly messages
+    if (source === 'network' || message.toLowerCase().includes('network') ||
+        message.toLowerCase().includes('http') || message.toLowerCase().includes('timeout') ||
+        message.toLowerCase().includes('authentication failed') ||
+        message.toLowerCase().includes('server error') ||
+        message.toLowerCase().includes('server not found')) {
+
+      const lowerMessage = message.toLowerCase();
+
+      if (lowerMessage.includes('network unreachable') || lowerMessage.includes('cannot connect')) {
+        return `
+          <div class="device-error-message">
+            <p><strong>Network Unreachable</strong></p>
+            <p>Cannot connect to server. Check internet connection and try again.</p>
+            <p class="error-hint">Please verify your network connection and ensure the server is accessible.</p>
+          </div>
+        `;
+      }
+
+      if (lowerMessage.includes('request timeout') || lowerMessage.includes('timeout')) {
+        return `
+          <div class="device-error-message">
+            <p><strong>Connection Timeout</strong></p>
+            <p>Connection timed out. Check network connection and try again.</p>
+            <p class="error-hint">The server may be slow or unreachable. Please check your network connection.</p>
+          </div>
+        `;
+      }
+
+      if (lowerMessage.includes('authentication failed') || lowerMessage.includes('check device configuration')) {
+        return `
+          <div class="device-error-message">
+            <p><strong>Authentication Failed</strong></p>
+            <p>Device authentication failed. Please check device configuration in settings.</p>
+            <p class="error-hint">Verify your device token and server URL in the configuration menu.</p>
+          </div>
+        `;
+      }
+
+      if (lowerMessage.includes('server not found') || lowerMessage.includes('verify server url')) {
+        return `
+          <div class="device-error-message">
+            <p><strong>Server Not Found</strong></p>
+            <p>Cannot reach the server. Please verify server URL in settings.</p>
+            <p class="error-hint">Check your server URL configuration and ensure the server is running.</p>
+          </div>
+        `;
+      }
+
+      if (lowerMessage.includes('server error') || lowerMessage.includes('contact support')) {
+        return `
+          <div class="device-error-message">
+            <p><strong>Server Error</strong></p>
+            <p>Server is experiencing issues. Please try again in a moment.</p>
+            <p class="error-hint">If the problem persists, contact support for assistance.</p>
+          </div>
+        `;
+      }
+
+      // Generic network error
+      return `
+        <div class="device-error-message">
+          <p><strong>Network Error</strong></p>
+          <p>${message}</p>
+          <p class="error-hint">Please check your network connection and try again.</p>
+        </div>
+      `;
+    }
+
     // Handle device-specific errors with user-friendly messages
     if (source === 'magtek') {
       if (message.includes('No compatible MSR reader found') || message.includes('not found')) {

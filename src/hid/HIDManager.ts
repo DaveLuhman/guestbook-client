@@ -4,6 +4,7 @@ import { errorHandler } from "../error/errorHandler";
 import { soundManager } from "../sound/soundManager";
 import { updateScanData } from "./barcodeScanner";
 import { type swipeData, updateSwipeData } from "./magstripReader";
+import { showEntrySuccess, showEntryError } from "../main";
 
 // Device status tracking
 interface DeviceStatus {
@@ -47,7 +48,7 @@ export async function startHIDManager() {
 	// Set up device status monitoring
 	setupDeviceStatusMonitoring();
 
-	listen("barcode-data", (event) => {
+	listen("barcode-data", async (event) => {
 		try {
 			console.log("Barcode scanned:", event.payload);
 			// For barcode, expect event.payload to be the 7-digit onecard number (string or number)
@@ -61,6 +62,8 @@ export async function startHIDManager() {
 				onecard = event.payload.toString();
 			} else {
 				console.error("Invalid barcode payload:", event.payload);
+				// Play error sound for bad read/scan
+				soundManager.playError();
 				errorHandler.handleApplicationError(
 					"barcode",
 					"Invalid barcode data",
@@ -70,36 +73,65 @@ export async function startHIDManager() {
 				return;
 			}
 			updateScanData(onecard); // Show scanned value to user
-			// Play success sound for valid barcode
+			// DO NOT play success sound here - wait for successful HTTP response
+			// Submit only the onecard value to the backend and await the result
+			// Note: Rust checks HTTP status code and returns Result<(), String>
+			// - If 2xx: Rust returns Ok(()), invoke resolves, we play success sound
+			// - If non-2xx or network error: Rust returns Err(String), invoke throws, catch block handles it
+			await invoke("submit_barcode_entry", { onecard });
+			// Only play success sound after receiving 2xx HTTP response (invoke resolved successfully)
 			soundManager.playSuccess();
-			// Submit only the onecard value to the backend
-			invoke("submit_barcode_entry", { onecard });
+			showEntrySuccess();
 		} catch (error) {
 			console.error("Submit error:", error);
+			// Play error sound for non-2xx HTTP response or network error
+			soundManager.playError();
 			const errorMsg =
 				error instanceof Error ? error.message : "Unknown barcode error";
 			errorHandler.handleApplicationError("barcode", errorMsg, "high");
+			showEntryError();
 		}
 		resetEntryData();
 	});
 
-	listen("magtek-data", (event) => {
+	listen("magtek-data", async (event) => {
 		try {
 			console.log("MagTek swipe:", event.payload);
 			const swipeData = event.payload as swipeData;
+			// Validate swipe data
+			if (!swipeData || !swipeData.onecard || !swipeData.name) {
+				console.error("Invalid swipe data:", swipeData);
+				// Play error sound for bad read/scan
+				soundManager.playError();
+				errorHandler.handleApplicationError(
+					"magtek",
+					"Invalid swipe data",
+					"medium",
+				);
+				resetEntryData();
+				return;
+			}
 			updateSwipeData(swipeData); // Show swipe data to user
-			// Play success sound for valid swipe
-			soundManager.playSuccess();
-			// Submit the swipe data to the backend
-			invoke("submit_swipe_entry", {
+			// DO NOT play success sound here - wait for successful HTTP response
+			// Submit the swipe data to the backend and await the result
+			// Note: Rust checks HTTP status code and returns Result<(), String>
+			// - If 2xx: Rust returns Ok(()), invoke resolves, we play success sound
+			// - If non-2xx or network error: Rust returns Err(String), invoke throws, catch block handles it
+			await invoke("submit_swipe_entry", {
 				name: swipeData.name,
 				onecard: swipeData.onecard,
 			});
+			// Only play success sound after receiving 2xx HTTP response (invoke resolved successfully)
+			soundManager.playSuccess();
+			showEntrySuccess();
 		} catch (error) {
 			console.error("Submit error:", error);
+			// Play error sound for non-2xx HTTP response or network error
+			soundManager.playError();
 			const errorMsg =
 				error instanceof Error ? error.message : "Unknown MagTek error";
 			errorHandler.handleApplicationError("magtek", errorMsg, "high");
+			showEntryError();
 		}
 		resetEntryData();
 	});

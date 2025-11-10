@@ -104,6 +104,7 @@ fn start_magtek_listener(
         }
     }
 }
+
 #[tauri::command]
 async fn submit_swipe_entry(
     config_manager: tauri::State<'_, ConfigManager>,
@@ -112,7 +113,7 @@ async fn submit_swipe_entry(
 ) -> Result<(), String> {
     submit_entry(config_manager, CardData { name, onecard })
         .await
-        .unwrap();
+        .map_err(|e| format!("Failed to submit swipe entry: {}", e))?;
     Ok(())
 }
 #[tauri::command]
@@ -123,7 +124,7 @@ async fn submit_barcode_entry(
     let name = "Barcode".to_string();
     submit_entry(config_manager, CardData { name, onecard })
         .await
-        .unwrap();
+        .map_err(|e| format!("Failed to submit barcode entry: {}", e))?;
     Ok(())
 }
 
@@ -135,7 +136,7 @@ async fn submit_manual_entry(
     let name = "Manual Entry".to_string();
     submit_entry(config_manager, CardData { name, onecard })
         .await
-        .unwrap();
+        .map_err(|e| format!("Failed to submit manual entry: {}", e))?;
     Ok(())
 }
 

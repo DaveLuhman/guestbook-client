@@ -533,7 +533,18 @@ function updateConfigDisplay(config: config) {
   });
 }
 
-function showEntrySuccess() {
+// Shared reset function for consistent messaging
+function resetEntryDisplay() {
+  const entryData = document.getElementById('entry-data');
+  if (entryData) {
+    entryData.innerHTML =
+      '<p>Swipe your card or scan your barcode to record an entry...</p>';
+  }
+  // Remove any state classes from body
+  document.body.classList.remove('success-state', 'error-state');
+}
+
+export function showEntrySuccess() {
   // Update the main display to show success
   const entryData = document.getElementById('entry-data');
   if (entryData) {
@@ -542,14 +553,12 @@ function showEntrySuccess() {
     document.body.classList.add('success-state');
     // Reset after 3 seconds
     setTimeout(() => {
-      entryData.innerHTML =
-        '<p>Swipe your card or scan your barcode to record an entry...</p>';
-      document.body.classList.remove('success-state');
+      resetEntryDisplay();
     }, 3000);
   }
 }
 
-function showEntryError() {
+export function showEntryError() {
   // Update the main display to show error
   const entryData = document.getElementById('entry-data');
   if (entryData) {
@@ -558,9 +567,7 @@ function showEntryError() {
     document.body.classList.add('error-state');
     // Reset after 3 seconds
     setTimeout(() => {
-      entryData.innerHTML =
-        '<p>Swipe your card or scan your barcode to record an entry...</p>';
-      document.body.classList.remove('error-state');
+      resetEntryDisplay();
     }, 3000);
   }
 }
