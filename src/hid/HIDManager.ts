@@ -86,12 +86,19 @@ export async function startHIDManager() {
 			console.error("Submit error:", error);
 			// Play error sound for non-2xx HTTP response or network error
 			soundManager.playError();
-			const errorMsg =
-				error instanceof Error ? error.message : "Unknown barcode error";
+			// Extract error message - Tauri errors can be strings, Error objects, or custom objects
+			let errorMsg = "Unknown barcode error";
+			if (typeof error === "string") {
+				errorMsg = error;
+			} else if (error instanceof Error) {
+				errorMsg = error.message;
+			} else if (error && typeof error === "object" && "message" in error) {
+				errorMsg = String((error as { message: unknown }).message);
+			}
 			errorHandler.handleApplicationError("barcode", errorMsg, "high");
 			showEntryError();
 		}
-		resetEntryData();
+		// Don't call resetEntryData here - let showEntrySuccess/showEntryError handle the reset
 	});
 
 	listen("magtek-data", async (event) => {
@@ -128,12 +135,19 @@ export async function startHIDManager() {
 			console.error("Submit error:", error);
 			// Play error sound for non-2xx HTTP response or network error
 			soundManager.playError();
-			const errorMsg =
-				error instanceof Error ? error.message : "Unknown MagTek error";
+			// Extract error message - Tauri errors can be strings, Error objects, or custom objects
+			let errorMsg = "Unknown MagTek error";
+			if (typeof error === "string") {
+				errorMsg = error;
+			} else if (error instanceof Error) {
+				errorMsg = error.message;
+			} else if (error && typeof error === "object" && "message" in error) {
+				errorMsg = String((error as { message: unknown }).message);
+			}
 			errorHandler.handleApplicationError("magtek", errorMsg, "high");
 			showEntryError();
 		}
-		resetEntryData();
+		// Don't call resetEntryData here - let showEntrySuccess/showEntryError handle the reset
 	});
 }
 
