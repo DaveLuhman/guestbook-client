@@ -365,6 +365,21 @@ async function openConfig() {
     });
 
     try {
+      // Load app version
+      try {
+        const version = await invoke<string>('get_app_version');
+        const versionElement = document.getElementById('config-app-version');
+        if (versionElement) {
+          versionElement.textContent = version;
+        }
+      } catch (error) {
+        console.error('Failed to load app version:', error);
+        const versionElement = document.getElementById('config-app-version');
+        if (versionElement) {
+          versionElement.textContent = 'Error loading';
+        }
+      }
+
       // Load configuration data
       const config: config = await invoke('get_full_config');
       updateConfigDisplay(config);

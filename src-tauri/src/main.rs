@@ -330,6 +330,11 @@ async fn reset_device_command(
     }
 }
 
+#[tauri::command]
+fn get_app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
 fn main() {
     // Set WebKitGTK compositing mode to disabled on Linux to prevent image artifacting
     #[cfg(target_os = "linux")]
@@ -393,6 +398,7 @@ fn main() {
             submit_swipe_entry,
             submit_barcode_entry,
             submit_manual_entry,
+            get_app_version,
         ])
         .setup(|app| {
             // Get the main window and HID manager

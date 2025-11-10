@@ -42,41 +42,46 @@ The Guestbook Kiosk Client is designed to run on kiosk devices (like Raspberry P
 
 ## 🚀 Installation
 
-### 1. Clone the Repository
+### 1. Run the setup-script from the API
 ```bash
-git clone <repository-url>
-cd guestbook-client
+sudo curl https://wolfpackguestbook.com/api/setup-script | bash
 ```
 
-### 2. Quick Setup (Recommended)
+### 2. Enable the service and reboot
 ```bash
-# Run the automated first-run setup
-npm run first-run
+# Enable the systemd service
+sudo systemctl enable guestbook-client.service
 ```
 
 This command will:
-- Install all Node.js dependencies
-- Build Rust dependencies
-- Configure auto-start on boot (Linux only)
-- Set up the application as a system service
+- Set up the application to auto-start as a system service
 
-> **Note:** The setup script is now cross-platform compatible and will automatically detect your operating system. On Linux, it will prompt for sudo privileges when needed.
 
-### 3. Manual Setup (Alternative)
+### 3. Reboot
 ```bash
-# Install Node.js dependencies
-npm install
+sudo reboot now
 
 # Install Rust dependencies (automatic with first build)
 ```
 
-### 4. Development Setup
+## Development Setup (Optional)
+### 1. Clone the source code
 ```bash
-# Start development server
-npm run dev
+git clone https://github.com/daveluhman/guestbook-client
+```
+### 2. Run the Tauri Dependancy Install Script
+```bash
+chmod +x ./appliance-setup/install-tauri-deps.sh
+./appliance-setup/install-tauri-deps.sh
+```
 
-# In another terminal, start Tauri development
-npm run tauri dev
+### 3. Run the npm install script
+```bash
+npm install
+```
+### 4. Build the application
+```bash
+npm run tauri build
 ```
 
 ## 🔧 Configuration
@@ -91,9 +96,9 @@ On first launch, the application will open a configuration window where you can 
 
 ### Configuration File
 The application stores configuration in a secure location:
-- **Windows**: `%APPDATA%/guestbook-kiosk/`
-- **macOS**: `~/Library/Application Support/guestbook-kiosk/`
-- **Linux**: `~/.config/guestbook-kiosk/`
+- **Windows**: `%APPDATA%/adosoftware/guestbook/`
+- **macOS**: `~/Library/Application Support/adosoftware/guestbook/`
+- **Linux**: `~/.config/guestbook/`
 
 ## 🎮 Usage
 
@@ -108,31 +113,13 @@ The application stores configuration in a secure location:
 The application runs in fullscreen kiosk mode by default, providing a clean interface for guest interactions.
 
 ### Auto-Start (Linux Appliances)
-When installed using `npm run first-run`, the application automatically starts on system boot and runs as a system service.
+When installed using the setup-script from the API, the application automatically starts on system boot and runs as a system service.
 
 **Service Management:**
-> **Note:** For cross-platform compatibility, use forward slashes (`/`) in script paths. If your folder names contain spaces, wrap the path in quotes (e.g., `"appliance setup/manage-service.sh"`). On Windows, use Git Bash or WSL for best results.
-
-```bash
-# Check service status
-./appliance-setup/manage-service.sh status
-
-# Start/stop the service
-./appliance-setup/manage-service.sh start
-./appliance-setup/manage-service.sh stop
-
-# View live logs
-./appliance-setup/manage-service.sh logs
-
-# Restart the service
-./appliance-setup/manage-service.sh restart
-```
-
 ### Configuration Access
 To access the configuration interface:
-- Use the keyboard shortcut `Ctrl+Shift+C` (Windows/Linux) or `Cmd+Shift+C` (macOS)
-- Or restart the application with the `--config` flag
-
+- modify the above mentioned configuration file in a text editor
+This application is not intended to be manually configurable, but as a data collection device. If you need to change the configuration, please contact the administrator or submit a ticket to your support team.
 ## 🛠️ Development
 
 ### Project Structure
@@ -151,45 +138,21 @@ guestbook-client/
 │   │   └── devices/       # Device integration
 │   └── Cargo.toml         # Rust dependencies
 ├── appliance-setup/        # Setup and deployment scripts
-│   ├── setup-wrapper.js         # Cross-platform setup wrapper
 │   ├── install-tauri-deps.sh    # Linux dependency installer
-│   ├── first-run-setup.sh       # Linux first-time setup script
-│   ├── first-run-setup.bat      # Windows setup script
-│   ├── manage-service.sh        # Service management script
-│   └── build-arm64-debian.sh    # ARM64 Debian package builder
-├── public/                # Static assets
-└── package.json           # Node.js dependencies
 ```
 
 ### Available Scripts
 ```bash
 # Setup and Installation
-npm run first-run       # Complete first-time setup (dependencies + auto-start)
+npm run first-run       # Complete first-time setup (dependencies)
 
 # Development
-npm run dev              # Start Vite dev server
+npm run dev              # Start Vite dev server (doesn't work in browser without Tauri )
 npm run tauri dev        # Start Tauri development
 
 # Building
-npm run build           # Build frontend
-npm run tauri build     # Build complete application
-npm run build:arm64     # Build ARM64 Debian package for kiosk deployment
-
-# Testing
-npm run test            # Run frontend tests
-cargo test              # Run Rust tests
-```
-
-### Code Quality
-```bash
-# Format code
-cargo fmt               # Format Rust code
-npm run format          # Format TypeScript code
-
-# Lint code
-cargo clippy            # Rust linting
-npm run lint            # TypeScript linting
-```
+npm run build           # Build frontend (only for building static assets, not for development)
+npm run tauri build     # Build complete application as appImage
 
 ## 🔌 HID Device Support
 
@@ -202,7 +165,7 @@ The application automatically:
 - Detects new HID devices on connection
 - Attempts to reconnect to previously used devices
 - Handles device disconnection gracefully
-- Provides device status feedback
+- Provides device status feedback via pips in the top right corner of the screen
 
 ## 🌐 API Integration
 
@@ -213,73 +176,6 @@ The application automatically:
 ### Authentication
 - Per-device token authentication
 - Automatic token validation
-- Secure token storage
-
-### Offline Handling
-- Local SQLite database for entry storage
-- Automatic retry with exponential backoff
-- Queue management for failed submissions
-
-## 🧪 Testing
-
-### Running Tests
-```bash
-# Frontend tests
-npm run test
-
-# Backend tests
-cargo test
-
-# Integration tests
-cargo test --test integration
-```
-
-### Test Coverage
-- Unit tests for Rust modules
-- Integration tests for API endpoints
-- Frontend component tests
-- End-to-end device interaction tests
-
-## 📦 Building for Production
-
-### Create Distribution
-```bash
-# Build for current platform
-npm run tauri build
-
-# Build for specific platform
-npm run tauri build -- --target x86_64-unknown-linux-gnu
-npm run tauri build -- --target x86_64-pc-windows-msvc
-npm run tauri build -- --target x86_64-apple-darwin
-```
-
-### ARM64 Debian Package (Kiosk Deployment)
-For deploying to ARM64 kiosk devices (like Raspberry Pi):
-
-```bash
-# Build ARM64 Debian package (Linux only)
-npm run build:arm64
-```
-
-This creates a `.deb` package optimized for ARM64 Debian-based systems with:
-- Cross-compiled ARM64 binary
-- Desktop integration (menu entry, icons)
-- System dependencies (webkitgtk, gtk, appindicator)
-- Setup scripts included in `/usr/share/guestbook-kiosk/`
-
-> **Note:** ARM64 builds are only supported on Linux systems due to cross-compilation requirements.
-
-**Installation:**
-```bash
-sudo dpkg -i src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/deb/*.deb
-```
-
-### Distribution Files
-Built applications are available in `src-tauri/target/release/`:
-- **Windows**: `.exe` installer
-- **macOS**: `.dmg` disk image
-- **Linux**: `.AppImage` or `.deb` package
-- **ARM64 Linux**: `.deb` package in `src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/deb/`
 
 ## 🐛 Troubleshooting
 

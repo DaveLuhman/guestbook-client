@@ -1,6 +1,6 @@
 [package]
 name = "guestbook-client"
-version = "0.1.1"
+version = "0.1.2"
 description = "The client application for the Guestbook platform"
 authors = ["Dave Luhman","ADO Software"]
 edition = "2024"

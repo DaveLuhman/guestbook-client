@@ -6,12 +6,19 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 
 ### [Unreleased]
 
+### [0.1.2] - 2024-XX-XX
+
 - Added: Improved device registration logging (request URL/body, server response parsing)
 - Changed: Device reset now calls `DELETE /devices/{device_id}` and uses the configured device ID
 - Fixed: Unused variable warning in `reset_device` by using `device_id` in the DELETE URL
 - Fixed: More robust heartbeat error handling with status/body in errors
 - Changed: Minor updates to frontend `index.html`, `src/main.ts`, and `src/styles.css`
 - Build: General build process improvements for the Tauri app
+
+### [0.1.1] - 2024-XX-XX
+
+- Changed: Project configuration and naming conventions updated
+- Build: Package configuration updates and version management improvements
 
 ### [0.1.0] - Initial release
 
