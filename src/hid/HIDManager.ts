@@ -4,6 +4,21 @@ import { errorHandler } from "../error/errorHandler";
 import { soundManager } from "../sound/soundManager";
 import { updateScanData } from "./barcodeScanner";
 import { type swipeData, updateSwipeData } from "./magstripReader";
+import { showEntrySuccess, showEntryError } from "../main";
+
+// Device status tracking
+interface DeviceStatus {
+  connected: boolean;
+  state: string;
+  error_count: number;
+  last_error?: string;
+  last_seen?: number;
+}
+
+interface DeviceStatusResponse {
+  barcode: DeviceStatus;
+  msr: DeviceStatus;
+}
 
 const entryDataEl = document.querySelector("#entry-data");
 export const defaultMessage =
@@ -24,28 +39,16 @@ const resetEntryData = () => {
 };
 
 export async function startHIDManager() {
-	try {
-		await invoke("start_barcode_listener");
-	} catch (error) {
-		const errorMsg =
-			error instanceof Error ? error.message : "Barcode Scanner not found";
-		errorHandler.handleApplicationError("barcode", errorMsg, "medium");
-		setTimeout(() => {
-			resetEntryData();
-		}, 10000);
-	}
-	try {
-		await invoke("start_magtek_listener");
-	} catch (error) {
-		const errorMsg =
-			error instanceof Error ? error.message : "MagTek Reader not found";
-		errorHandler.handleApplicationError("magtek", errorMsg, "medium");
-		setTimeout(() => {
-			resetEntryData();
-		}, 10000);
-	}
+	// The backend now handles device initialization and monitoring automatically
+	// We just need to set up event listeners and check initial status
 
-	listen("barcode-data", (event) => {
+	// Check initial device status
+	await checkDeviceStatus();
+
+	// Set up device status monitoring
+	setupDeviceStatusMonitoring();
+
+	listen("barcode-data", async (event) => {
 		try {
 			console.log("Barcode scanned:", event.payload);
 			// For barcode, expect event.payload to be the 7-digit onecard number (string or number)
@@ -59,6 +62,8 @@ export async function startHIDManager() {
 				onecard = event.payload.toString();
 			} else {
 				console.error("Invalid barcode payload:", event.payload);
+				// Play error sound for bad read/scan
+				soundManager.playError();
 				errorHandler.handleApplicationError(
 					"barcode",
 					"Invalid barcode data",
@@ -68,37 +73,235 @@ export async function startHIDManager() {
 				return;
 			}
 			updateScanData(onecard); // Show scanned value to user
-			// Play success sound for valid barcode
+			// DO NOT play success sound here - wait for successful HTTP response
+			// Submit only the onecard value to the backend and await the result
+			// Note: Rust checks HTTP status code and returns Result<(), String>
+			// - If 2xx: Rust returns Ok(()), invoke resolves, we play success sound
+			// - If non-2xx or network error: Rust returns Err(String), invoke throws, catch block handles it
+			await invoke("submit_barcode_entry", { onecard });
+			// Only play success sound after receiving 2xx HTTP response (invoke resolved successfully)
 			soundManager.playSuccess();
-			// Submit only the onecard value to the backend
-			invoke("submit_barcode_entry", { onecard });
+			showEntrySuccess();
 		} catch (error) {
 			console.error("Submit error:", error);
-			const errorMsg =
-				error instanceof Error ? error.message : "Unknown barcode error";
+			// Play error sound for non-2xx HTTP response or network error
+			soundManager.playError();
+			// Extract error message - Tauri errors can be strings, Error objects, or custom objects
+			let errorMsg = "Unknown barcode error";
+			if (typeof error === "string") {
+				errorMsg = error;
+			} else if (error instanceof Error) {
+				errorMsg = error.message;
+			} else if (error && typeof error === "object" && "message" in error) {
+				errorMsg = String((error as { message: unknown }).message);
+			}
 			errorHandler.handleApplicationError("barcode", errorMsg, "high");
+			showEntryError();
 		}
-		resetEntryData();
+		// Don't call resetEntryData here - let showEntrySuccess/showEntryError handle the reset
 	});
 
-	listen("magtek-data", (event) => {
+	listen("magtek-data", async (event) => {
 		try {
 			console.log("MagTek swipe:", event.payload);
 			const swipeData = event.payload as swipeData;
+			// Validate swipe data
+			if (!swipeData || !swipeData.onecard || !swipeData.name) {
+				console.error("Invalid swipe data:", swipeData);
+				// Play error sound for bad read/scan
+				soundManager.playError();
+				errorHandler.handleApplicationError(
+					"magtek",
+					"Invalid swipe data",
+					"medium",
+				);
+				resetEntryData();
+				return;
+			}
 			updateSwipeData(swipeData); // Show swipe data to user
-			// Play success sound for valid swipe
-			soundManager.playSuccess();
-			// Submit the swipe data to the backend
-			invoke("submit_swipe_entry", {
+			// DO NOT play success sound here - wait for successful HTTP response
+			// Submit the swipe data to the backend and await the result
+			// Note: Rust checks HTTP status code and returns Result<(), String>
+			// - If 2xx: Rust returns Ok(()), invoke resolves, we play success sound
+			// - If non-2xx or network error: Rust returns Err(String), invoke throws, catch block handles it
+			await invoke("submit_swipe_entry", {
 				name: swipeData.name,
 				onecard: swipeData.onecard,
 			});
+			// Only play success sound after receiving 2xx HTTP response (invoke resolved successfully)
+			soundManager.playSuccess();
+			showEntrySuccess();
 		} catch (error) {
 			console.error("Submit error:", error);
-			const errorMsg =
-				error instanceof Error ? error.message : "Unknown MagTek error";
+			// Play error sound for non-2xx HTTP response or network error
+			soundManager.playError();
+			// Extract error message - Tauri errors can be strings, Error objects, or custom objects
+			let errorMsg = "Unknown MagTek error";
+			if (typeof error === "string") {
+				errorMsg = error;
+			} else if (error instanceof Error) {
+				errorMsg = error.message;
+			} else if (error && typeof error === "object" && "message" in error) {
+				errorMsg = String((error as { message: unknown }).message);
+			}
 			errorHandler.handleApplicationError("magtek", errorMsg, "high");
+			showEntryError();
 		}
-		resetEntryData();
+		// Don't call resetEntryData here - let showEntrySuccess/showEntryError handle the reset
 	});
+}
+
+// Check device status and update UI
+async function checkDeviceStatus() {
+	try {
+		const status: DeviceStatusResponse = await invoke("get_device_status");
+		updateDeviceStatusDisplay(status);
+	} catch (error) {
+		console.error("Failed to get device status:", error);
+		errorHandler.handleApplicationError("system", "Failed to check device status", "medium");
+	}
+}
+
+// Set up device status monitoring
+function setupDeviceStatusMonitoring() {
+	// Listen for device status events from the backend
+	listen("device-status", (event) => {
+		const { device, status, error } = event.payload as {
+			device: "barcode" | "msr";
+			status: string;
+			error?: string
+		};
+
+		console.log(`Device status update: ${device} - ${status}`);
+
+		// Update UI based on device status
+		updateDeviceStatusIndicator(device, status, error);
+
+		// Show user-friendly messages for important status changes
+		if (status === "connected") {
+			console.log(`${device} device connected successfully`);
+			// Clear any previous error messages when device reconnects
+			clearDeviceErrorMessage(device);
+		} else if (status === "error") {
+			const errorMsg = error || `${device} device error`;
+			errorHandler.handleApplicationError(device, errorMsg, "medium");
+		} else if (status === "disconnected") {
+			// Show user-friendly disconnection message
+			showDeviceDisconnectedMessage(device);
+		} else if (status === "connecting") {
+			console.log(`${device} device attempting to connect...`);
+		}
+	});
+
+	// Periodically check device status (every 15 seconds)
+	setInterval(checkDeviceStatus, 15000);
+}
+
+// Update device status display in the UI
+function updateDeviceStatusDisplay(status: DeviceStatusResponse) {
+	updateDeviceStatusIndicator("barcode", status.barcode.connected ? "connected" : "disconnected");
+	updateDeviceStatusIndicator("msr", status.msr.connected ? "connected" : "disconnected");
+}
+
+// Update individual device status indicator
+function updateDeviceStatusIndicator(device: "barcode" | "msr", status: string, error?: string) {
+	// Create or update device status indicators in the UI
+	let indicator = document.getElementById(`${device}-status-indicator`);
+	if (!indicator) {
+		indicator = document.createElement("div");
+		indicator.id = `${device}-status-indicator`;
+		indicator.className = "device-status-indicator";
+		indicator.style.cssText = `
+			position: fixed;
+			top: 10px;
+			${device === "barcode" ? "right: 10px;" : "right: 60px;"}
+			width: 20px;
+			height: 20px;
+			border-radius: 50%;
+			z-index: 1000;
+			transition: background-color 0.3s ease;
+		`;
+		document.body.appendChild(indicator);
+	}
+
+	// Update indicator color based on status
+	switch (status) {
+		case "connected":
+			indicator.style.backgroundColor = "#00aa00";
+			indicator.title = `${device} device connected`;
+			break;
+		case "connecting":
+			indicator.style.backgroundColor = "#ffaa00";
+			indicator.title = `${device} device connecting...`;
+			break;
+		case "error":
+			indicator.style.backgroundColor = "#aa0000";
+			indicator.title = `${device} device error: ${error || "Unknown error"}`;
+			break;
+
+		case "disconnected":
+			indicator.style.backgroundColor = "#aa0000";
+			indicator.title = `${device} device disconnected - please check connection`;
+			break;
+		default:
+			indicator.style.backgroundColor = "#666666";
+			indicator.title = `${device} device disconnected`;
+			break;
+	}
+}
+
+// Show user-friendly disconnection message
+function showDeviceDisconnectedMessage(device: "barcode" | "msr") {
+	const entryData = document.getElementById('entry-data');
+	if (entryData) {
+		const deviceName = device === "msr" ? "Card Reader" : "Barcode Scanner";
+		const instructions = device === "msr"
+			? "Please check that the card reader is properly connected via USB and try again."
+			: "Please check that the barcode scanner is properly connected via USB and try again.";
+
+		entryData.innerHTML = `
+			<div class="device-disconnected-message">
+				<p><strong>${deviceName} Disconnected</strong></p>
+				<p>${instructions}</p>
+				<p class="reconnect-hint">The device will reconnect automatically when plugged back in.</p>
+			</div>
+		`;
+
+		// Add CSS styling for the message
+		const style = document.createElement('style');
+		style.textContent = `
+			.device-disconnected-message {
+				text-align: center;
+				padding: 20px;
+				background-color: #ffe6e6;
+				border: 2px solid #ff6666;
+				border-radius: 8px;
+				margin: 20px;
+			}
+			.device-disconnected-message p {
+				margin: 10px 0;
+			}
+			.reconnect-hint {
+				font-style: italic;
+				color: #666;
+				font-size: 0.9em;
+			}
+		`;
+		if (!document.querySelector('style[data-device-disconnect]')) {
+			style.setAttribute('data-device-disconnect', 'true');
+			document.head.appendChild(style);
+		}
+	}
+}
+
+// Clear device error message when device reconnects
+function clearDeviceErrorMessage(_device: "barcode" | "msr") {
+	const entryData = document.getElementById('entry-data');
+	if (entryData) {
+		// Check if we're showing a device disconnected message
+		const disconnectedMessage = entryData.querySelector('.device-disconnected-message');
+		if (disconnectedMessage) {
+			entryData.innerHTML = '<p>Swipe your card or scan your barcode to record an entry...</p>';
+		}
+	}
 }

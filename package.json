@@ -1,12 +1,12 @@
 {
-  "name": "guestbook-tauri-ts",
+  "name": "guestbook-client",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
-    "build:assets": "npx esbuild src/firstRun.ts --bundle --format=esm --outfile=dist/firstRun.js && mkdir -p dist && cp -a public/firstRun.html dist/ && cp -a public/styles.css dist/",
+    "build": "tsc && vite build && npm run build:assets",
+    "build:assets": "node scripts/build-assets.js",
     "preview": "vite preview",
     "tauri": "tauri",
     "first-run": "node appliance-setup/setup-wrapper.js first-run",

@@ -19,7 +19,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            server_url: Some("https://guestbook-api.ep.ado.software/api/v1".to_string()),
+            server_url: Some("http://localhost:3001/api/v1".to_string()),
             server_token: None,
             device_id: Some(compute_device_id()),
             device_location: None,
@@ -54,12 +54,12 @@ impl ConfigManager {
 
     fn resolve_config_path() -> PathBuf {
         // Try to use a platform-specific user data directory, fallback to home
-        if let Some(proj_dirs) = directories::ProjectDirs::from("com", "wolfpack", "guestbook") {
-            proj_dirs.config_dir().join("wg_config.json")
+        if let Some(proj_dirs) = directories::ProjectDirs::from("com", "adosoftware", "guestbook") {
+            proj_dirs.config_dir().join("gb_config.json")
         } else if let Some(home) = dirs::home_dir() {
-            home.join(".wolfpack-guestbook").join("wg_config.json")
+            home.join(".adosoftware-guestbook").join("gb_config.json")
         } else {
-            PathBuf::from("wg_config.json")
+            PathBuf::from("gb_config.json")
         }
     }
 
@@ -120,6 +120,10 @@ impl ConfigManager {
 
     pub fn set_server_token(&self, server_token: String) {
         self.set(server_token, |c, v| c.server_token = Some(v));
+    }
+
+    pub fn set_first_run(&self, first_run: bool) {
+        self.set(first_run, |c, v| c.first_run = v);
     }
 }
 

@@ -1,3 +1,4 @@
+/** biome-ignore-all lint/suspicious/noExplicitAny: it's a display transformation, typing doesn't matter */
 import { invoke } from '@tauri-apps/api/core';
 import { errorHandler } from './error/errorHandler';
 import { startHIDManager } from './hid/HIDManager';
@@ -27,6 +28,7 @@ function initializeMenu() {
   const menuModal = document.getElementById('menu-modal');
   const manualEntryBtn = document.getElementById('manual-entry-btn');
   const showConfigBtn = document.getElementById('show-config-btn');
+  const resetDeviceBtn = document.getElementById('reset-device-btn');
   const restartApplianceBtn = document.getElementById('restart-appliance-btn');
 
   if (!menuTrigger || !menuModal) return;
@@ -126,21 +128,12 @@ function initializeMenu() {
     }
   });
 
-  // Add test logging button
-  const testLoggingBtn = document.getElementById('test-logging-btn');
-  testLoggingBtn?.addEventListener('click', async () => {
-    console.log('Test Logging clicked');
+  // Reset device button handler
+  resetDeviceBtn?.addEventListener('click', () => {
+    console.log('Reset Device clicked');
     soundManager.playBeep(700, 120);
-    try {
-      await invoke('test_logging');
-      console.log('Test logging completed');
-    } catch (error) {
-      console.error('Test logging failed:', error);
-      const errorMsg =
-        error instanceof Error ? error.message : 'Test logging failed';
-      errorHandler.handleApplicationError('system', errorMsg, 'medium');
-    }
     closeMenu();
+    openResetConfirmation();
   });
 }
 
@@ -372,6 +365,21 @@ async function openConfig() {
     });
 
     try {
+      // Load app version
+      try {
+        const version = await invoke<string>('get_app_version');
+        const versionElement = document.getElementById('config-app-version');
+        if (versionElement) {
+          versionElement.textContent = version;
+        }
+      } catch (error) {
+        console.error('Failed to load app version:', error);
+        const versionElement = document.getElementById('config-app-version');
+        if (versionElement) {
+          versionElement.textContent = 'Error loading';
+        }
+      }
+
       // Load configuration data
       const config: config = await invoke('get_full_config');
       updateConfigDisplay(config);
@@ -399,6 +407,118 @@ function closeConfig() {
   if (configModal && isConfigOpen) {
     isConfigOpen = false;
     configModal.classList.remove('active');
+  }
+}
+
+// Reset device confirmation modal functions
+let isResetConfirmationOpen = false;
+let resetModalListeners: { element: HTMLElement; event: string; handler: EventListener }[] = [];
+
+function openResetConfirmation() {
+  const resetModal = document.getElementById('reset-confirmation-modal');
+  if (resetModal && !isResetConfirmationOpen) {
+    isResetConfirmationOpen = true;
+    resetModal.classList.add('active');
+
+    // Focus management for accessibility
+    resetModal.focus();
+
+    // Set up event listeners for the confirmation modal
+    const closeBtn = document.getElementById('close-reset-confirmation-btn');
+    const cancelBtn = document.getElementById('cancel-reset-btn');
+    const confirmBtn = document.getElementById('confirm-reset-btn');
+
+    // Close button handler
+    if (closeBtn) {
+      const handler = () => closeResetConfirmation();
+      closeBtn.addEventListener('click', handler);
+      resetModalListeners.push({ element: closeBtn, event: 'click', handler });
+    }
+
+    // Cancel button handler
+    if (cancelBtn) {
+      const handler = () => closeResetConfirmation();
+      cancelBtn.addEventListener('click', handler);
+      resetModalListeners.push({ element: cancelBtn, event: 'click', handler });
+    }
+
+    // Confirm button handler
+    if (confirmBtn) {
+      const handler = async () => {
+        await handleDeviceReset();
+      };
+      confirmBtn.addEventListener('click', handler);
+      resetModalListeners.push({ element: confirmBtn, event: 'click', handler });
+    }
+
+    // Close on outside click
+    const outsideClickHandler = (e: Event) => {
+      if (e.target === resetModal) {
+        closeResetConfirmation();
+      }
+    };
+    resetModal.addEventListener('click', outsideClickHandler);
+    resetModalListeners.push({ element: resetModal, event: 'click', handler: outsideClickHandler });
+
+    // Close on Escape key
+    const escapeHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closeResetConfirmation();
+      }
+    };
+    resetModal.addEventListener('keydown', escapeHandler);
+    resetModalListeners.push({ element: resetModal, event: 'keydown', handler: escapeHandler });
+  }
+}
+
+function closeResetConfirmation() {
+  const resetModal = document.getElementById('reset-confirmation-modal');
+  if (resetModal && isResetConfirmationOpen) {
+    // Remove all event listeners
+    resetModalListeners.forEach(({ element, event, handler }) => {
+      element.removeEventListener(event, handler);
+    });
+    resetModalListeners = [];
+
+    isResetConfirmationOpen = false;
+    resetModal.classList.remove('active');
+  }
+}
+
+async function handleDeviceReset() {
+  const confirmBtn = document.getElementById('confirm-reset-btn');
+  if (!confirmBtn) return;
+
+  // Store original text for potential error recovery
+  const originalText = confirmBtn.textContent;
+
+  try {
+    // Show user feedback that reset is in progress
+    confirmBtn.textContent = 'Resetting...';
+    (confirmBtn as HTMLButtonElement).disabled = true;
+
+    // Call the Tauri reset device function
+    await invoke('reset_device_command');
+    console.log('Device reset completed successfully');
+
+    // Show success feedback
+    confirmBtn.style.backgroundColor = '#00aa00';
+    confirmBtn.textContent = 'Reset Complete';
+
+    // Close the confirmation modal after a brief delay
+    setTimeout(() => {
+      closeResetConfirmation();
+    }, 2000);
+
+  } catch (error) {
+    console.error('Device reset failed:', error);
+    const errorMsg = error instanceof Error ? error.message : 'Device reset failed';
+    errorHandler.handleApplicationError('system', errorMsg, 'medium');
+
+    // Reset button state on error
+    confirmBtn.textContent = originalText;
+    (confirmBtn as HTMLButtonElement).disabled = false;
+    confirmBtn.style.backgroundColor = '';
   }
 }
 
@@ -451,7 +571,18 @@ function updateConfigDisplay(config: config) {
   });
 }
 
-function showEntrySuccess() {
+// Shared reset function for consistent messaging
+function resetEntryDisplay() {
+  const entryData = document.getElementById('entry-data');
+  if (entryData) {
+    entryData.innerHTML =
+      '<p>Swipe your card or scan your barcode to record an entry...</p>';
+  }
+  // Remove any state classes from body
+  document.body.classList.remove('success-state', 'error-state');
+}
+
+export function showEntrySuccess() {
   // Update the main display to show success
   const entryData = document.getElementById('entry-data');
   if (entryData) {
@@ -460,14 +591,12 @@ function showEntrySuccess() {
     document.body.classList.add('success-state');
     // Reset after 3 seconds
     setTimeout(() => {
-      entryData.innerHTML =
-        '<p>Swipe your card or scan your barcode to record an entry...</p>';
-      document.body.classList.remove('success-state');
+      resetEntryDisplay();
     }, 3000);
   }
 }
 
-function showEntryError() {
+export function showEntryError() {
   // Update the main display to show error
   const entryData = document.getElementById('entry-data');
   if (entryData) {
@@ -476,9 +605,7 @@ function showEntryError() {
     document.body.classList.add('error-state');
     // Reset after 3 seconds
     setTimeout(() => {
-      entryData.innerHTML =
-        '<p>Swipe your card or scan your barcode to record an entry...</p>';
-      document.body.classList.remove('error-state');
+      resetEntryDisplay();
     }, 3000);
   }
 }

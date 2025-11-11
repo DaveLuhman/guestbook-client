@@ -1,6 +1,6 @@
 {
-    "name": "Wolfpack Punchclock",
-    "short_name": "WPC",
+    "name": "Guestbook Client",
+    "short_name": "GBC",
     "icons": [
         {
             "src": "/icon-192.png",
