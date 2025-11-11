@@ -2,7 +2,6 @@ use crate::devices::barcode::{listen_to_barcode, open_symbol_scanner};
 use crate::devices::magtek::{listen_to_magtek, open_magtek_reader};
 use hidapi::HidApi;
 use log::{info, warn};
-use serde_json::json;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{Emitter, WebviewWindow};
@@ -142,43 +141,71 @@ impl HIDManager {
         Ok(())
     }
 
+    // Generic helper for device reconnection
+    fn attempt_reconnect_device<F, L>(
+        status: &Arc<Mutex<DeviceStatus>>,
+        api: &HidApi,
+        window: &Arc<Mutex<Option<WebviewWindow>>>,
+        device_kind: &str,
+        open_fn: F,
+        listen_fn: L,
+    ) -> Result<(), String>
+    where
+        F: Fn(&HidApi) -> Option<hidapi::HidDevice>,
+        L: Fn(hidapi::HidDevice, WebviewWindow),
+    {
+        let mut device_status = status.lock().unwrap();
+
+        if matches!(device_status.state, DeviceConnectionState::Connected) {
+            return Ok(()); // Already connected
+        }
+
+        match open_fn(api) {
+            Some(device) => {
+                device_status.state = DeviceConnectionState::Connected;
+                device_status.last_seen = Some(Instant::now());
+                device_status.error_count = 0;
+                device_status.last_error = None;
+
+                if let Some(window_ref) = window.lock().unwrap().as_ref() {
+                    window_ref
+                        .emit(
+                            "device-status",
+                            serde_json::json!({
+                                "device": device_kind,
+                                "status": "connected"
+                            }),
+                        )
+                        .ok();
+
+                    // Start listening on the new device
+                    listen_fn(device, window_ref.clone());
+                }
+                Ok(())
+            }
+            None => {
+                let error_msg = format!("No compatible {} found", device_kind);
+                device_status.state = DeviceConnectionState::Disconnected;
+                device_status.error_count += 1;
+                device_status.last_error = Some(error_msg.clone());
+                Err(error_msg)
+            }
+        }
+    }
+
     fn attempt_reconnect_barcode_static(
         barcode_status: &Arc<Mutex<DeviceStatus>>,
         api: &HidApi,
         window: &Arc<Mutex<Option<WebviewWindow>>>,
     ) -> Result<(), String> {
-        let mut barcode = barcode_status.lock().unwrap();
-
-        if matches!(barcode.state, DeviceConnectionState::Connected) {
-            return Ok(()); // Already connected
-        }
-
-        match open_symbol_scanner(api) {
-            Some(device) => {
-                barcode.state = DeviceConnectionState::Connected;
-                barcode.last_seen = Some(Instant::now());
-                barcode.error_count = 0;
-                barcode.last_error = None;
-
-                if let Some(window) = window.lock().unwrap().as_ref() {
-                    window.emit("device-status", serde_json::json!({
-                        "device": "barcode",
-                        "status": "connected"
-                    })).ok();
-
-                    // Start listening on the new device
-                    listen_to_barcode(device, window.clone());
-                }
-                Ok(())
-            }
-            None => {
-                let error_msg = "No compatible barcode scanner found".to_string();
-                barcode.state = DeviceConnectionState::Disconnected;
-                barcode.error_count += 1;
-                barcode.last_error = Some(error_msg.clone());
-                Err(error_msg)
-            }
-        }
+        Self::attempt_reconnect_device(
+            barcode_status,
+            api,
+            window,
+            "barcode",
+            open_symbol_scanner,
+            listen_to_barcode,
+        )
     }
 
     fn attempt_reconnect_msr_static(
@@ -186,108 +213,36 @@ impl HIDManager {
         api: &HidApi,
         window: &Arc<Mutex<Option<WebviewWindow>>>,
     ) -> Result<(), String> {
-        let mut msr = msr_status.lock().unwrap();
-
-        if matches!(msr.state, DeviceConnectionState::Connected) {
-            return Ok(()); // Already connected
-        }
-
-        match open_magtek_reader(api) {
-            Some(device) => {
-                msr.state = DeviceConnectionState::Connected;
-                msr.last_seen = Some(Instant::now());
-                msr.error_count = 0;
-                msr.last_error = None;
-
-                if let Some(window) = window.lock().unwrap().as_ref() {
-                    window.emit("device-status", serde_json::json!({
-                        "device": "msr",
-                        "status": "connected"
-                    })).ok();
-
-                    // Start listening on the new device
-                    listen_to_magtek(device, window.clone());
-                }
-                Ok(())
-            }
-            None => {
-                let error_msg = "No compatible MSR reader found".to_string();
-                msr.state = DeviceConnectionState::Disconnected;
-                msr.error_count += 1;
-                msr.last_error = Some(error_msg.clone());
-                Err(error_msg)
-            }
-        }
+        Self::attempt_reconnect_device(
+            msr_status,
+            api,
+            window,
+            "msr",
+            open_magtek_reader,
+            listen_to_magtek,
+        )
     }
 
     fn attempt_reconnect_barcode(&self, api: &HidApi) -> Result<(), String> {
-        let mut barcode = self.barcode_status.lock().unwrap();
-
-        if matches!(barcode.state, DeviceConnectionState::Connected) {
-            return Ok(()); // Already connected
-        }
-
-        match open_symbol_scanner(api) {
-            Some(device) => {
-                barcode.state = DeviceConnectionState::Connected;
-                barcode.last_seen = Some(Instant::now());
-                barcode.error_count = 0;
-                barcode.last_error = None;
-
-                if let Some(window) = self.window.lock().unwrap().as_ref() {
-                    window.emit("device-status", json!({
-                        "device": "barcode",
-                        "status": "connected"
-                    })).ok();
-
-                    // Start listening on the new device
-                    listen_to_barcode(device, window.clone());
-                }
-                Ok(())
-            }
-            None => {
-                let error_msg = "No compatible barcode scanner found".to_string();
-                barcode.state = DeviceConnectionState::Disconnected;
-                barcode.error_count += 1;
-                barcode.last_error = Some(error_msg.clone());
-                Err(error_msg)
-            }
-        }
+        Self::attempt_reconnect_device(
+            &self.barcode_status,
+            api,
+            &self.window,
+            "barcode",
+            open_symbol_scanner,
+            listen_to_barcode,
+        )
     }
 
     fn attempt_reconnect_msr(&self, api: &HidApi) -> Result<(), String> {
-        let mut msr = self.msr_status.lock().unwrap();
-
-        if matches!(msr.state, DeviceConnectionState::Connected) {
-            return Ok(()); // Already connected
-        }
-
-        match open_magtek_reader(api) {
-            Some(device) => {
-                msr.state = DeviceConnectionState::Connected;
-                msr.last_seen = Some(Instant::now());
-                msr.error_count = 0;
-                msr.last_error = None;
-
-                if let Some(window) = self.window.lock().unwrap().as_ref() {
-                    window.emit("device-status", json!({
-                        "device": "msr",
-                        "status": "connected"
-                    })).ok();
-
-                    // Start listening on the new device
-                    listen_to_magtek(device, window.clone());
-                }
-                Ok(())
-            }
-            None => {
-                let error_msg = "No compatible MSR reader found".to_string();
-                msr.state = DeviceConnectionState::Disconnected;
-                msr.error_count += 1;
-                msr.last_error = Some(error_msg.clone());
-                Err(error_msg)
-            }
-        }
+        Self::attempt_reconnect_device(
+            &self.msr_status,
+            api,
+            &self.window,
+            "msr",
+            open_magtek_reader,
+            listen_to_magtek,
+        )
     }
 
     pub fn start_initial_connection(&self) -> Result<(), String> {
@@ -406,7 +361,7 @@ impl HIDManager {
                             let mut status = barcode_status.lock().unwrap();
                             status.state = DeviceConnectionState::Disconnected;
                             if let Some(window) = window.lock().unwrap().as_ref() {
-                                window.emit("device-status", json!({
+                                window.emit("device-status", serde_json::json!({
                                     "device": "barcode",
                                     "status": "disconnected"
                                 })).ok();
@@ -416,7 +371,7 @@ impl HIDManager {
                             let mut status = msr_status.lock().unwrap();
                             status.state = DeviceConnectionState::Disconnected;
                             if let Some(window) = window.lock().unwrap().as_ref() {
-                                window.emit("device-status", json!({
+                                window.emit("device-status", serde_json::json!({
                                     "device": "msr",
                                     "status": "disconnected"
                                 })).ok();

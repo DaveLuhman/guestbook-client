@@ -171,7 +171,7 @@ export class ErrorHandler {
     const entryData = document.getElementById('entry-data');
     if (entryData) {
       // Create user-friendly error message based on source and message
-      const friendlyMessage = this.createFriendlyErrorMessage(context);
+      const errorTemplate = this.getErrorTemplate(context);
 
       // Add CSS styling for device error messages
       this.addDeviceErrorStyles();
@@ -179,10 +179,30 @@ export class ErrorHandler {
       // Use CSS classes instead of inline styles
       const errorElement = document.createElement('div');
       errorElement.className = `error-message ${context.severity}`;
-      errorElement.innerHTML = friendlyMessage;
+
+      // Build error message safely using DOM methods
+      const container = document.createElement('div');
+      container.className = 'device-error-message';
+
+      const title = document.createElement('p');
+      const strong = document.createElement('strong');
+      strong.textContent = errorTemplate.title;
+      title.appendChild(strong);
+      container.appendChild(title);
+
+      const body = document.createElement('p');
+      body.textContent = errorTemplate.body;
+      container.appendChild(body);
+
+      const hint = document.createElement('p');
+      hint.className = 'error-hint';
+      hint.textContent = errorTemplate.hint;
+      container.appendChild(hint);
+
+      errorElement.appendChild(container);
 
       // Clear and append the new element
-      entryData.innerHTML = '';
+      entryData.textContent = '';
       entryData.appendChild(errorElement);
 
       // Don't change body background color - it makes text unreadable
@@ -191,135 +211,115 @@ export class ErrorHandler {
       const resetTime = context.source === 'barcode' || context.source === 'magtek' ? 8000 : 5000;
       setTimeout(() => {
         if (entryData.querySelector('.error-message')) {
-          entryData.innerHTML = '<p>Swipe your card or scan your barcode to record an entry...</p>';
+          const resetText = document.createElement('p');
+          resetText.textContent = 'Swipe your card or scan your barcode to record an entry...';
+          entryData.textContent = '';
+          entryData.appendChild(resetText);
         }
       }, resetTime);
     }
   }
 
-  private createFriendlyErrorMessage(context: ErrorContext): string {
+  private getErrorTemplate(context: ErrorContext): { title: string; body: string; hint: string } {
     const { source, message } = context;
+    const lowerMessage = message.toLowerCase();
 
-    // Handle network-specific errors with user-friendly messages
-    if (source === 'network' || message.toLowerCase().includes('network') ||
-        message.toLowerCase().includes('http') || message.toLowerCase().includes('timeout') ||
-        message.toLowerCase().includes('authentication failed') ||
-        message.toLowerCase().includes('server error') ||
-        message.toLowerCase().includes('server not found')) {
-
-      const lowerMessage = message.toLowerCase();
+    // Network error templates
+    if (source === 'network' || lowerMessage.includes('network') ||
+        lowerMessage.includes('http') || lowerMessage.includes('timeout') ||
+        lowerMessage.includes('authentication failed') ||
+        lowerMessage.includes('server error') ||
+        lowerMessage.includes('server not found')) {
 
       if (lowerMessage.includes('network unreachable') || lowerMessage.includes('cannot connect')) {
-        return `
-          <div class="device-error-message">
-            <p><strong>Network Unreachable</strong></p>
-            <p>Cannot connect to server. Check internet connection and try again.</p>
-            <p class="error-hint">Please verify your network connection and ensure the server is accessible.</p>
-          </div>
-        `;
+        return {
+          title: 'Network Unreachable',
+          body: 'Cannot connect to server. Check internet connection and try again.',
+          hint: 'Please verify your network connection and ensure the server is accessible.'
+        };
       }
 
       if (lowerMessage.includes('request timeout') || lowerMessage.includes('timeout')) {
-        return `
-          <div class="device-error-message">
-            <p><strong>Connection Timeout</strong></p>
-            <p>Connection timed out. Check network connection and try again.</p>
-            <p class="error-hint">The server may be slow or unreachable. Please check your network connection.</p>
-          </div>
-        `;
+        return {
+          title: 'Connection Timeout',
+          body: 'Connection timed out. Check network connection and try again.',
+          hint: 'The server may be slow or unreachable. Please check your network connection.'
+        };
       }
 
       if (lowerMessage.includes('authentication failed') || lowerMessage.includes('check device configuration')) {
-        return `
-          <div class="device-error-message">
-            <p><strong>Authentication Failed</strong></p>
-            <p>Device authentication failed. Please check device configuration in settings.</p>
-            <p class="error-hint">Verify your device token and server URL in the configuration menu.</p>
-          </div>
-        `;
+        return {
+          title: 'Authentication Failed',
+          body: 'Device authentication failed. Please check device configuration in settings.',
+          hint: 'Verify your device token and server URL in the configuration menu.'
+        };
       }
 
       if (lowerMessage.includes('server not found') || lowerMessage.includes('verify server url')) {
-        return `
-          <div class="device-error-message">
-            <p><strong>Server Not Found</strong></p>
-            <p>Cannot reach the server. Please verify server URL in settings.</p>
-            <p class="error-hint">Check your server URL configuration and ensure the server is running.</p>
-          </div>
-        `;
+        return {
+          title: 'Server Not Found',
+          body: 'Cannot reach the server. Please verify server URL in settings.',
+          hint: 'Check your server URL configuration and ensure the server is running.'
+        };
       }
 
       if (lowerMessage.includes('server error') || lowerMessage.includes('contact support')) {
-        return `
-          <div class="device-error-message">
-            <p><strong>Server Error</strong></p>
-            <p>Server is experiencing issues. Please try again in a moment.</p>
-            <p class="error-hint">If the problem persists, contact support for assistance.</p>
-          </div>
-        `;
+        return {
+          title: 'Server Error',
+          body: 'Server is experiencing issues. Please try again in a moment.',
+          hint: 'If the problem persists, contact support for assistance.'
+        };
       }
 
       // Generic network error
-      return `
-        <div class="device-error-message">
-          <p><strong>Network Error</strong></p>
-          <p>${message}</p>
-          <p class="error-hint">Please check your network connection and try again.</p>
-        </div>
-      `;
+      return {
+        title: 'Network Error',
+        body: message,
+        hint: 'Please check your network connection and try again.'
+      };
     }
 
-    // Handle device-specific errors with user-friendly messages
+    // Device-specific error templates
     if (source === 'magtek') {
       if (message.includes('No compatible MSR reader found') || message.includes('not found')) {
-        return `
-          <div class="device-error-message">
-            <p><strong>Card Reader Not Found</strong></p>
-            <p>Please check that the card reader is properly connected via USB.</p>
-            <p class="error-hint">Make sure the USB cable is securely plugged in and try again.</p>
-          </div>
-        `;
+        return {
+          title: 'Card Reader Not Found',
+          body: 'Please check that the card reader is properly connected via USB.',
+          hint: 'Make sure the USB cable is securely plugged in and try again.'
+        };
       }
       if (message.includes('disconnected')) {
-        return `
-          <div class="device-error-message">
-            <p><strong>Card Reader Disconnected</strong></p>
-            <p>Please check the USB connection and try again.</p>
-            <p class="error-hint">The device will reconnect automatically when plugged back in.</p>
-          </div>
-        `;
+        return {
+          title: 'Card Reader Disconnected',
+          body: 'Please check the USB connection and try again.',
+          hint: 'The device will reconnect automatically when plugged back in.'
+        };
       }
     }
 
     if (source === 'barcode') {
       if (message.includes('No compatible') || message.includes('not found')) {
-        return `
-          <div class="device-error-message">
-            <p><strong>Barcode Scanner Not Found</strong></p>
-            <p>Please check that the barcode scanner is properly connected via USB.</p>
-            <p class="error-hint">Make sure the USB cable is securely plugged in and try again.</p>
-          </div>
-        `;
+        return {
+          title: 'Barcode Scanner Not Found',
+          body: 'Please check that the barcode scanner is properly connected via USB.',
+          hint: 'Make sure the USB cable is securely plugged in and try again.'
+        };
       }
       if (message.includes('disconnected')) {
-        return `
-          <div class="device-error-message">
-            <p><strong>Barcode Scanner Disconnected</strong></p>
-            <p>Please check the USB connection and try again.</p>
-            <p class="error-hint">The device will reconnect automatically when plugged back in.</p>
-          </div>
-        `;
+        return {
+          title: 'Barcode Scanner Disconnected',
+          body: 'Please check the USB connection and try again.',
+          hint: 'The device will reconnect automatically when plugged back in.'
+        };
       }
     }
 
     // Fallback for other errors
-    return `
-      <div class="device-error-message">
-        <p><strong>Device Error</strong></p>
-        <p>${message}</p>
-        <p class="error-hint">Please check the device connection and try again.</p>
-      </div>
-    `;
+    return {
+      title: 'Device Error',
+      body: message,
+      hint: 'Please check the device connection and try again.'
+    };
   }
 
   private addDeviceErrorStyles() {

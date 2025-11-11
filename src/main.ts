@@ -412,6 +412,7 @@ function closeConfig() {
 
 // Reset device confirmation modal functions
 let isResetConfirmationOpen = false;
+let resetModalListeners: { element: HTMLElement; event: string; handler: EventListener }[] = [];
 
 function openResetConfirmation() {
   const resetModal = document.getElementById('reset-confirmation-modal');
@@ -428,35 +429,57 @@ function openResetConfirmation() {
     const confirmBtn = document.getElementById('confirm-reset-btn');
 
     // Close button handler
-    closeBtn?.addEventListener('click', closeResetConfirmation);
+    if (closeBtn) {
+      const handler = () => closeResetConfirmation();
+      closeBtn.addEventListener('click', handler);
+      resetModalListeners.push({ element: closeBtn, event: 'click', handler });
+    }
 
     // Cancel button handler
-    cancelBtn?.addEventListener('click', closeResetConfirmation);
+    if (cancelBtn) {
+      const handler = () => closeResetConfirmation();
+      cancelBtn.addEventListener('click', handler);
+      resetModalListeners.push({ element: cancelBtn, event: 'click', handler });
+    }
 
     // Confirm button handler
-    confirmBtn?.addEventListener('click', async () => {
-      await handleDeviceReset();
-    });
+    if (confirmBtn) {
+      const handler = async () => {
+        await handleDeviceReset();
+      };
+      confirmBtn.addEventListener('click', handler);
+      resetModalListeners.push({ element: confirmBtn, event: 'click', handler });
+    }
 
     // Close on outside click
-    resetModal.addEventListener('click', (e) => {
+    const outsideClickHandler = (e: Event) => {
       if (e.target === resetModal) {
         closeResetConfirmation();
       }
-    });
+    };
+    resetModal.addEventListener('click', outsideClickHandler);
+    resetModalListeners.push({ element: resetModal, event: 'click', handler: outsideClickHandler });
 
     // Close on Escape key
-    resetModal.addEventListener('keydown', (e: KeyboardEvent) => {
+    const escapeHandler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         closeResetConfirmation();
       }
-    });
+    };
+    resetModal.addEventListener('keydown', escapeHandler);
+    resetModalListeners.push({ element: resetModal, event: 'keydown', handler: escapeHandler });
   }
 }
 
 function closeResetConfirmation() {
   const resetModal = document.getElementById('reset-confirmation-modal');
   if (resetModal && isResetConfirmationOpen) {
+    // Remove all event listeners
+    resetModalListeners.forEach(({ element, event, handler }) => {
+      element.removeEventListener(event, handler);
+    });
+    resetModalListeners = [];
+
     isResetConfirmationOpen = false;
     resetModal.classList.remove('active');
   }

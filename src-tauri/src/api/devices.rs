@@ -14,18 +14,26 @@ pub async fn register_device(
         "id": config.device_id,
     });
     log::info!("Registering device with URL: {}", register_url);
-    log::info!("Request body: {}", serde_json::to_string_pretty(&request_body).unwrap());
+    log::info!(
+        "Request body: {}",
+        serde_json::to_string_pretty(&request_body)
+            .map_err(|e| format!("Failed to serialize request body: {}", e))?
+    );
     let client = reqwest::Client::new();
     let response = client
         .post(register_url)
         .header("Content-Type", "application/json")
-        .body(serde_json::to_string(&request_body).unwrap())
+        .body(
+            serde_json::to_string(&request_body)
+                .map_err(|e| format!("Failed to serialize request body: {}", e))?
+        )
         .send()
-        .await;
-    if response.is_err() {
-        return Err(response.err().unwrap().to_string());
-    }
-    let body = response.unwrap().text().await.unwrap();
+        .await
+        .map_err(|e| format!("Failed to send request: {}", e))?;
+    let body = response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read response body: {}", e))?;
     log::info!("Server response body: {}", body);
     let json: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("Failed to parse response JSON: {}", e))?;
@@ -61,15 +69,13 @@ pub async fn reset_device(
         .delete(delete_url)
         .header("Authorization", format!("Bearer {}", server_token))
         .send()
-        .await;
+        .await
+        .map_err(|e| {
+            log::error!("Failed to retire device: {}", e);
+            format!("Failed to retire device: {}", e)
+        })?;
 
-    if response.is_err() {
-        let error = response.err().unwrap();
-        log::error!("Failed to retire device: {}", error);
-        return Err(format!("Failed to retire device: {}", error));
-    }
-
-    let status = response.unwrap().status();
+    let status = response.status();
     if !status.is_success() {
         let error_msg = format!("Server returned error status: {}", status);
         log::error!("{}", error_msg);
@@ -104,14 +110,12 @@ pub async fn send_heartbeat(config_manager: tauri::State<'_, ConfigManager>) -> 
             format!("Bearer {}", config.server_token.clone().unwrap()),
         )
         .send()
-        .await;
-    if response.is_err() {
-        return Err(response.err().unwrap().to_string());
-    }
-    let resp = response.unwrap();
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp
+        .await
+        .map_err(|e| format!("Failed to send heartbeat request: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response
             .text()
             .await
             .unwrap_or_else(|_| "<no body>".to_string());
