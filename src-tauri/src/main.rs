@@ -358,12 +358,17 @@ fn main() {
         // to add "transparent: true" or other rendering hints if needed
     }
 
-    // Initialize logging before creating the app
+    // Initialize config manager
     let config_manager = ConfigManager::new();
-    if let Err(e) = logging::init_logging(&config_manager.config_path) {
-        eprintln!("Failed to initialize logging: {}", e);
-    } else {
-        log::info!("Logging system initialized successfully");
+
+    // Initialize logging only when devtools is NOT being used (devtools has its own logger)
+    #[cfg(not(debug_assertions))]
+    {
+        if let Err(e) = logging::init_logging(&config_manager.config_path) {
+            eprintln!("Failed to initialize logging: {}", e);
+        } else {
+            log::info!("Logging system initialized successfully");
+        }
     }
 
     // Initialize HID manager
