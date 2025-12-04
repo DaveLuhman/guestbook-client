@@ -412,7 +412,7 @@ function closeConfig() {
 
 // Reset device confirmation modal functions
 let isResetConfirmationOpen = false;
-let resetModalListeners: { element: HTMLElement; event: string; handler: EventListener }[] = [];
+let resetModalListeners: { element: HTMLElement; event: string; handler: EventListener | ((e: KeyboardEvent) => void) }[] = [];
 
 function openResetConfirmation() {
   const resetModal = document.getElementById('reset-confirmation-modal');
@@ -476,7 +476,7 @@ function closeResetConfirmation() {
   if (resetModal && isResetConfirmationOpen) {
     // Remove all event listeners
     resetModalListeners.forEach(({ element, event, handler }) => {
-      element.removeEventListener(event, handler);
+      element.removeEventListener(event, handler as EventListener);
     });
     resetModalListeners = [];
 

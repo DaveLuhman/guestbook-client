@@ -1,10 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { errorHandler } from "../error/errorHandler";
+import { showEntryError, showEntrySuccess } from "../main";
 import { soundManager } from "../sound/soundManager";
 import { updateScanData } from "./barcodeScanner";
+import { startCameraScanner } from "./cameraScanner";
 import { type swipeData, updateSwipeData } from "./magstripReader";
-import { showEntrySuccess, showEntryError } from "../main";
 
 // Device status tracking
 interface DeviceStatus {
@@ -48,20 +49,38 @@ export async function startHIDManager() {
 	// Set up device status monitoring
 	setupDeviceStatusMonitoring();
 
-	listen("barcode-data", async (event) => {
+	// Start camera scanner (will fall back to HID scanner if camera fails)
+	try {
+		const cameraStarted = await startCameraScanner();
+		if (cameraStarted) {
+			console.log("Camera scanner started successfully");
+			updateDeviceStatusIndicator("camera", "connected");
+		} else {
+			console.warn("Camera scanner failed to start, will use HID scanner as fallback");
+			updateDeviceStatusIndicator("camera", "disconnected");
+		}
+	} catch (error) {
+		console.error("Failed to initialize camera scanner:", error);
+		updateDeviceStatusIndicator("camera", "error", String(error));
+		// Continue with HID scanner as fallback
+	}
+
+	// Listen for camera barcode events (custom window events)
+	window.addEventListener("camera-barcode-data", ((event: CustomEvent) => {
+		const onecard = event.detail?.payload;
+		if (onecard && typeof onecard === "string") {
+			// Process the same way as Tauri barcode-data events
+			processBarcodeData(onecard);
+		}
+	}) as EventListener);
+
+	// Shared barcode processing function for both Tauri events and camera events
+	async function processBarcodeData(onecard: string) {
 		try {
-			console.log("Barcode scanned:", event.payload);
-			// For barcode, expect event.payload to be the 7-digit onecard number (string or number)
-			let onecard = "";
-			if (typeof event.payload === "string" && /^\d{7}$/.test(event.payload)) {
-				onecard = event.payload;
-			} else if (
-				typeof event.payload === "number" &&
-				event.payload.toString().length === 7
-			) {
-				onecard = event.payload.toString();
-			} else {
-				console.error("Invalid barcode payload:", event.payload);
+			console.log("Barcode scanned:", onecard);
+			// Validate onecard format (7 digits)
+			if (!/^\d{7}$/.test(onecard)) {
+				console.error("Invalid barcode payload:", onecard);
 				// Play error sound for bad read/scan
 				soundManager.playError();
 				errorHandler.handleApplicationError(
@@ -99,6 +118,31 @@ export async function startHIDManager() {
 			showEntryError();
 		}
 		// Don't call resetEntryData here - let showEntrySuccess/showEntryError handle the reset
+	}
+
+	listen("barcode-data", async (event) => {
+		// For barcode, expect event.payload to be the 7-digit onecard number (string or number)
+		let onecard = "";
+		if (typeof event.payload === "string" && /^\d{7}$/.test(event.payload)) {
+			onecard = event.payload;
+		} else if (
+			typeof event.payload === "number" &&
+			event.payload.toString().length === 7
+		) {
+			onecard = event.payload.toString();
+		} else {
+			console.error("Invalid barcode payload:", event.payload);
+			// Play error sound for bad read/scan
+			soundManager.playError();
+			errorHandler.handleApplicationError(
+				"barcode",
+				"Invalid barcode data",
+				"medium",
+			);
+			resetEntryData();
+			return;
+		}
+		await processBarcodeData(onecard);
 	});
 
 	listen("magtek-data", async (event) => {
@@ -204,7 +248,7 @@ function updateDeviceStatusDisplay(status: DeviceStatusResponse) {
 }
 
 // Update individual device status indicator
-function updateDeviceStatusIndicator(device: "barcode" | "msr", status: string, error?: string) {
+function updateDeviceStatusIndicator(device: "barcode" | "msr" | "camera", status: string, error?: string) {
 	// Create or update device status indicators in the UI
 	let indicator = document.getElementById(`${device}-status-indicator`);
 	if (!indicator) {
@@ -214,7 +258,7 @@ function updateDeviceStatusIndicator(device: "barcode" | "msr", status: string, 
 		indicator.style.cssText = `
 			position: fixed;
 			top: 10px;
-			${device === "barcode" ? "right: 10px;" : "right: 60px;"}
+			${device === "barcode" ? "right: 10px;" : device === "camera" ? "right: 35px;" : "right: 60px;"}
 			width: 20px;
 			height: 20px;
 			border-radius: 50%;
