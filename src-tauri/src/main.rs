@@ -340,26 +340,23 @@ fn main() {
     #[cfg(target_os = "linux")]
     {
         // Additional WebKitGTK settings for better Linux compatibility
-        std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
-        std::env::set_var("WEBKIT_DISABLE_GPU_PROCESS", "1");
-        // GStreamer: make audio stable on headless Pi + fix plugin discovery
-        std::env::set_var("GST_AUDIO_SINK", "alsasink");
-        std::env::set_var(
-            "GST_PLUGIN_SYSTEM_PATH_1_0",
-            "/usr/lib/aarch64-linux-gnu/gstreamer-1.0",
-        );
-        std::env::set_var(
-            "GST_PLUGIN_SCANNER",
-            "/usr/lib/aarch64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner",
-        );
+        unsafe {
+            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+            std::env::set_var("WEBKIT_DISABLE_GPU_PROCESS", "1");
+            // GStreamer: make audio stable on headless Pi + fix plugin discovery
+            std::env::set_var("GST_AUDIO_SINK", "alsasink");
+            std::env::set_var(
+                "GST_PLUGIN_SYSTEM_PATH_1_0",
+                "/usr/lib/aarch64-linux-gnu/gstreamer-1.0",
+            );
+            std::env::set_var(
+                "GST_PLUGIN_SCANNER",
+                "/usr/lib/aarch64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner",
+            );
+        }
         // Alternative approach: You could also modify window creation in tauri.conf.json
         // to add "transparent: true" or other rendering hints if needed
     }
-
-    #[cfg(debug_assertions)] // only enable instrumentation in development builds
-    let devtools = tauri_plugin_devtools::init();
-
-    let mut builder = tauri::Builder::default().plugin(tauri_plugin_http::init());
 
     // Initialize logging before creating the app
     let config_manager = ConfigManager::new();
@@ -372,10 +369,15 @@ fn main() {
     // Initialize HID manager
     let hid_manager = HIDManager::new();
 
-    #[cfg(debug_assertions)]
-    {
-        builder = builder.plugin(devtools);
-    }
+    // Build the Tauri builder with conditional devtools plugin
+    let builder = {
+        let mut b = tauri::Builder::default().plugin(tauri_plugin_http::init());
+        #[cfg(debug_assertions)] // only enable instrumentation in development builds
+        {
+            b = b.plugin(tauri_plugin_devtools::init());
+        }
+        b
+    };
     builder
         .manage(config_manager)
         .manage(hid_manager)

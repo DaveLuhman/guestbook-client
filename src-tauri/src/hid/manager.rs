@@ -1,7 +1,7 @@
 use crate::devices::barcode::{listen_to_barcode, open_symbol_scanner};
 use crate::devices::magtek::{listen_to_magtek, open_magtek_reader};
 use hidapi::HidApi;
-use log::{info, warn};
+use log::warn;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{Emitter, WebviewWindow};
@@ -392,7 +392,7 @@ impl HIDManager {
     #[cfg(not(target_os = "linux"))]
     fn start_usb_hotplug_monitoring(&self) {
         // On non-Linux systems, we rely on the periodic monitoring
-        info!("USB hot-plug monitoring not implemented for this platform, using periodic monitoring");
+        log::info!("USB hot-plug monitoring not implemented for this platform, using periodic monitoring");
     }
 
     #[allow(dead_code)]
