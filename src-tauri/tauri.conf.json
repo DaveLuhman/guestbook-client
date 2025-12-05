@@ -35,6 +35,7 @@
           "https://fonts.gstatic.com"
         ],
         "img-src": "'self' asset: http://asset.localhost blob: data:",
+        "media-src": "'self' blob:",
         "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com"
       }
     }

@@ -46,15 +46,49 @@ export async function startCameraScanner(): Promise<boolean> {
 		return true;
 	}
 
+	// Check if getUserMedia is available
+	if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+		console.error('getUserMedia is not available in this browser/context');
+		return false;
+	}
+
 	try {
-		// Request camera access
-		const mediaStream = await navigator.mediaDevices.getUserMedia({
-			video: {
-				facingMode: 'environment', // Prefer back camera
-				width: { ideal: 1280 },
-				height: { ideal: 720 }
+		// Enumerate available cameras first
+		let deviceId: string | null = null;
+		try {
+			const devices = await navigator.mediaDevices.enumerateDevices();
+			const videoDevices = devices.filter(device => device.kind === 'videoinput');
+			console.log('Available video devices:', videoDevices.map(d => ({ id: d.deviceId, label: d.label })));
+
+			// Try to find a camera device (prefer one with a label, or just use the first one)
+			if (videoDevices.length > 0) {
+				deviceId = videoDevices[0].deviceId;
+				console.log('Using camera device:', deviceId);
 			}
-		});
+		} catch (enumError) {
+			console.warn('Failed to enumerate devices:', enumError);
+		}
+
+		// Request camera access with device ID if available, otherwise use permissive constraints
+		const constraints: MediaStreamConstraints = deviceId
+			? {
+				video: {
+					deviceId: { exact: deviceId },
+					width: { ideal: 1280 },
+					height: { ideal: 720 }
+				}
+			}
+			: {
+				video: {
+					// More permissive constraints for Raspberry Pi camera
+					width: { ideal: 1280 },
+					height: { ideal: 720 }
+				}
+			};
+
+		console.log('Requesting camera access with constraints:', constraints);
+		const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+		console.log('Camera stream obtained:', mediaStream.getVideoTracks().map(t => ({ id: t.id, label: t.label, enabled: t.enabled, readyState: t.readyState })));
 
 		stream = mediaStream;
 
@@ -74,6 +108,10 @@ export async function startCameraScanner(): Promise<boolean> {
 			}
 		}
 		videoElement.srcObject = stream;
+		videoElement.muted = true; // Mute to avoid feedback
+
+		// Ensure video element is visible
+		videoElement.style.display = 'block';
 
 		// Wait for video to be ready
 		await new Promise<void>((resolve, reject) => {
@@ -82,16 +120,45 @@ export async function startCameraScanner(): Promise<boolean> {
 				return;
 			}
 
+			const timeout = setTimeout(() => {
+				reject(new Error('Video element timeout - stream may not be active'));
+			}, 10000); // Increased timeout to 10 seconds
+
 			videoElement.onloadedmetadata = () => {
+				clearTimeout(timeout);
+				console.log('Video metadata loaded, dimensions:', videoElement?.videoWidth, 'x', videoElement?.videoHeight);
 				videoElement?.play()
-					.then(() => resolve())
-					.catch(reject);
+					.then(() => {
+						console.log('Video playback started');
+						resolve();
+					})
+					.catch((playError) => {
+						console.error('Video play error:', playError);
+						reject(playError);
+					});
 			};
 
-			videoElement.onerror = reject;
+			videoElement.onerror = (error) => {
+				clearTimeout(timeout);
+				console.error('Video element error:', error);
+				reject(new Error('Video element error'));
+			};
 
-			// Timeout after 5 seconds
-			setTimeout(() => reject(new Error('Video element timeout')), 5000);
+			// Check if stream tracks are active
+			const videoTracks = stream.getVideoTracks();
+			if (videoTracks.length === 0) {
+				clearTimeout(timeout);
+				reject(new Error('No video tracks in stream'));
+				return;
+			}
+
+			console.log('Video tracks:', videoTracks.map(t => ({
+				id: t.id,
+				label: t.label,
+				enabled: t.enabled,
+				readyState: t.readyState,
+				muted: t.muted
+			})));
 		});
 
 		// Initialize ZXing reader
@@ -132,6 +199,24 @@ export async function startCameraScanner(): Promise<boolean> {
 		return true;
 	} catch (error) {
 		console.error('Failed to start camera scanner:', error);
+		if (error instanceof Error) {
+			console.error('Error name:', error.name);
+			console.error('Error message:', error.message);
+			console.error('Error stack:', error.stack);
+		}
+		if (error instanceof DOMException) {
+			console.error('DOMException code:', error.code);
+			console.error('DOMException name:', error.name);
+		}
+		// Check if it's a permission error
+		if (error instanceof Error && (
+			error.name === 'NotAllowedError' ||
+			error.name === 'PermissionDeniedError' ||
+			error.message.includes('permission') ||
+			error.message.includes('denied')
+		)) {
+			console.error('Camera permission denied. Please grant camera permissions to the application.');
+		}
 		stopCameraScanner();
 		return false;
 	}
