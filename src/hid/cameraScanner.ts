@@ -58,17 +58,22 @@ export async function startCameraScanner(): Promise<boolean> {
 
 		stream = mediaStream;
 
-		// Create hidden video element
-		videoElement = document.createElement('video');
-		videoElement.style.position = 'fixed';
-		videoElement.style.top = '-9999px';
-		videoElement.style.left = '-9999px';
-		videoElement.style.width = '1px';
-		videoElement.style.height = '1px';
-		videoElement.setAttribute('autoplay', 'true');
-		videoElement.setAttribute('playsinline', 'true');
+		// Use existing visible video element or create one
+		videoElement = document.getElementById('camera-viewport') as HTMLVideoElement;
+		if (!videoElement) {
+			// Fallback: create video element if not found in HTML
+			videoElement = document.createElement('video');
+			videoElement.id = 'camera-viewport';
+			videoElement.setAttribute('autoplay', 'true');
+			videoElement.setAttribute('playsinline', 'true');
+			const container = document.querySelector('.camera-viewport-container');
+			if (container) {
+				container.appendChild(videoElement);
+			} else {
+				document.body.appendChild(videoElement);
+			}
+		}
 		videoElement.srcObject = stream;
-		document.body.appendChild(videoElement);
 
 		// Wait for video to be ready
 		await new Promise<void>((resolve, reject) => {
@@ -160,7 +165,12 @@ export function stopCameraScanner(): void {
 
 	if (videoElement) {
 		videoElement.srcObject = null;
-		videoElement.remove();
+		// Don't remove the persistent viewport element from HTML
+		// Only remove if it was dynamically created (doesn't have the id or wasn't in HTML originally)
+		const persistentElement = document.getElementById('camera-viewport');
+		if (!persistentElement || persistentElement !== videoElement) {
+			videoElement.remove();
+		}
 		videoElement = null;
 	}
 

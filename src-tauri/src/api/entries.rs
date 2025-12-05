@@ -14,7 +14,14 @@ pub async fn submit_entry(
     card_data: CardData,
 ) -> Result<(), String> {
     let config = get_full_config(config_manager.clone());
-    let submit_url = format!("{}/entries/submit", config.server_url.clone().unwrap());
+
+    // Validate required configuration fields
+    let server_url = config.server_url.clone()
+        .ok_or_else(|| "Server URL not configured. Please configure the server URL in settings.".to_string())?;
+    let server_token = config.server_token.clone()
+        .ok_or_else(|| "Server token not configured. Please configure the server token in settings.".to_string())?;
+
+    let submit_url = format!("{}/entries/submit", server_url);
 
     // Create client with timeout configuration (10 seconds)
     let client = reqwest::Client::builder()
@@ -29,7 +36,7 @@ pub async fn submit_entry(
         .header("Content-Type", "application/json")
         .header(
             "Authorization",
-            format!("Bearer {}", config.server_token.clone().unwrap()),
+            format!("Bearer {}", server_token),
         )
         .body(
             serde_json::to_string(&json!({
