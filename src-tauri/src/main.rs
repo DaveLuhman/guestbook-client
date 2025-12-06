@@ -358,7 +358,8 @@ async fn start_camera_sidecar(
     log::info!("Starting camera sidecar...");
 
     // Spawn the sidecar process
-    let child = app
+    // spawn() returns (Receiver<CommandEvent>, CommandChild), we only need the CommandChild
+    let (_rx, child) = app
         .shell()
         .sidecar("camera-scanner")
         .map_err(|e| format!("Failed to create sidecar command: {}", e))?
