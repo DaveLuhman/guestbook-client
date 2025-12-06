@@ -13,7 +13,6 @@ use hid::manager::{HIDManager, DeviceConnectionState};
 use tauri::WebviewWindow;
 use tauri::Manager;
 use tauri::Listener;
-use tauri_plugin_shell::ShellExt;
 
 use api::entries::{submit_entry, CardData};
 use std::sync::Mutex;
@@ -345,7 +344,6 @@ struct ScannerProc(Mutex<Option<Child>>);
 
 #[tauri::command]
 async fn start_camera_sidecar(
-    app: tauri::AppHandle,
     scanner: tauri::State<'_, ScannerProc>,
 ) -> Result<(), String> {
     let mut proc_guard = scanner.0.lock().map_err(|e| format!("Failed to lock scanner state: {}", e))?;

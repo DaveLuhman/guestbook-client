@@ -27,6 +27,16 @@ from pyzbar.pyzbar import decode as decode_barcodes, ZBarSymbol
 
 app = Flask(__name__)
 
+
+@app.after_request
+def add_cors_headers(response):
+    """Add CORS headers to allow requests from Tauri frontend"""
+    # Allow requests from Tauri dev server and production app
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    return response
+
 # Configuration
 NEXT_SCAN_TIMEOUT = 8.0  # Long-poll timeout in seconds
 DEBOUNCE_MS = 800  # Ignore duplicate scans within this window (ms)
@@ -401,9 +411,11 @@ def debug_frame():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/health', methods=['GET'])
+@app.route('/health', methods=['GET', 'OPTIONS'])
 def health():
     """Health check endpoint"""
+    if request.method == 'OPTIONS':
+        return '', 200
     print(f"[HTTP] GET /health")
     with scan_lock:
         if camera_error:
@@ -450,7 +462,7 @@ def debug_memory():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route('/next_scan', methods=['GET'])
+@app.route('/next_scan', methods=['GET', 'OPTIONS'])
 def next_scan():
     """
     Long-polling endpoint to get the next barcode scan.
@@ -486,6 +498,8 @@ def next_scan():
             "error": "Could not read from camera"
         }
     """
+    if request.method == 'OPTIONS':
+        return '', 200
     try:
         # Parse since_id parameter
         since_id = 0
