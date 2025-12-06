@@ -16,8 +16,9 @@ use tauri::Listener;
 
 use api::entries::{submit_entry, CardData};
 use std::sync::Mutex;
-use std::process::{Command, Child};
+use std::process::{Command, Child, Stdio};
 use std::path::PathBuf;
+use std::io::{BufRead, BufReader};
 
 #[tauri::command]
 fn get_hid_devices() -> Vec<String> {
@@ -389,16 +390,49 @@ async fn start_camera_sidecar(
     log::info!("Found camera sidecar script at: {:?}", script_path);
 
     // Spawn Python process directly
-    let child = Command::new("python3")
+    let mut child = Command::new("python3")
         .arg(&script_path)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("Failed to spawn camera sidecar: {} (script: {:?})", e, script_path))?;
 
+    // Capture stderr for logging
+    if let Some(stderr) = child.stderr.take() {
+        let stderr_reader = BufReader::new(stderr);
+        let child_id = child.id();
+        std::thread::spawn(move || {
+            for line in stderr_reader.lines() {
+                if let Ok(line) = line {
+                    log::error!("[Camera Sidecar PID {}] {}", child_id, line);
+                }
+            }
+        });
+    }
+
+    // Capture stdout for logging
+    if let Some(stdout) = child.stdout.take() {
+        let stdout_reader = BufReader::new(stdout);
+        let child_id = child.id();
+        std::thread::spawn(move || {
+            for line in stdout_reader.lines() {
+                if let Ok(line) = line {
+                    log::info!("[Camera Sidecar PID {}] {}", child_id, line);
+                }
+            }
+        });
+    }
+
+    // Check if process is still alive after a brief moment
+    let child_id = child.id();
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    if let Ok(Some(_)) = child.try_wait() {
+        return Err("Camera sidecar process exited immediately after start. Check logs for errors.".to_string());
+    }
+
     *proc_guard = Some(child);
-    log::info!("Camera sidecar started successfully");
+    log::info!("Camera sidecar started successfully (PID: {})", child_id);
 
     Ok(())
 }
