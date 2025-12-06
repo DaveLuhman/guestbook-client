@@ -1,270 +1,291 @@
-import type { Exception, Result } from '@zxing/library';
-import { BrowserMultiFormatReader, NotFoundException } from '@zxing/library';
+import { invoke } from '@tauri-apps/api/core';
+import { BrowserMultiFormatReader } from '@zxing/library';
 
-let videoElement: HTMLVideoElement | null = null;
-let stream: MediaStream | null = null;
 let scanning = false;
+let cameraStream: MediaStream | null = null;
+let barcodeReader: BrowserMultiFormatReader | null = null;
+let videoElement: HTMLVideoElement | null = null;
 let scanInterval: number | null = null;
-let codeReader: BrowserMultiFormatReader | null = null;
+let currentDeviceId: string | null = null;
 let lastScannedCode: string | null = null;
-let lastScanTime = 0;
+let lastScanTime: number = 0;
 const SCAN_COOLDOWN = 1000; // Prevent duplicate scans within 1 second
-let scanningPromise: Promise<void> | null = null;
 
-// Parse barcode format ^1234567^ to extract OneCard number
-function parseBarcodeData(rawData: string): string | null {
-	// Format is always ^1234567^ where we extract the number
-	const match = rawData.match(/^\^(\d+)\^$/);
-	if (match?.[1]) {
-		return match[1];
-	}
-	return null;
-}
-
-// Emit barcode-data event (same format as HID scanner)
-async function emitBarcodeData(onecard: string) {
-	// Prevent duplicate scans
-	const now = Date.now();
-	if (lastScannedCode === onecard && (now - lastScanTime) < SCAN_COOLDOWN) {
-		return;
-	}
-	lastScannedCode = onecard;
-	lastScanTime = now;
-
-	// Emit custom event that HIDManager listens to
-	const event = new CustomEvent('camera-barcode-data', {
-		detail: { payload: onecard }
-	});
-	window.dispatchEvent(event);
-}
-
-
-// Start camera-based barcode scanning
+// Initialize camera system and start scanning
 export async function startCameraScanner(): Promise<boolean> {
-	if (scanning) {
-		console.log('Camera scanner already running');
-		return true;
-	}
+  if (scanning) {
+    console.log('Camera scanner already running');
+    return true;
+  }
 
-	// Check if getUserMedia is available
-	if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-		console.error('getUserMedia is not available in this browser/context');
-		return false;
-	}
+  try {
+    console.log('Initializing camera system...');
 
-	try {
-		// Enumerate available cameras first
-		let deviceId: string | null = null;
-		try {
-			const devices = await navigator.mediaDevices.enumerateDevices();
-			const videoDevices = devices.filter(device => device.kind === 'videoinput');
-			console.log('Available video devices:', videoDevices.map(d => ({ id: d.deviceId, label: d.label })));
+    // Initialize the camera system
+    await invoke('initialize_camera_system');
 
-			// Try to find a camera device (prefer one with a label, or just use the first one)
-			if (videoDevices.length > 0) {
-				deviceId = videoDevices[0].deviceId;
-				console.log('Using camera device:', deviceId);
-			}
-		} catch (enumError) {
-			console.warn('Failed to enumerate devices:', enumError);
-		}
+    // Get available cameras
+    const cameras = await invoke<Array<{ id: string; name: string }>>(
+      'get_available_cameras'
+    );
 
-		// Request camera access with device ID if available, otherwise use permissive constraints
-		const constraints: MediaStreamConstraints = deviceId
-			? {
-				video: {
-					deviceId: { exact: deviceId },
-					width: { ideal: 1280 },
-					height: { ideal: 720 }
-				}
-			}
-			: {
-				video: {
-					// More permissive constraints for Raspberry Pi camera
-					width: { ideal: 1280 },
-					height: { ideal: 720 }
-				}
-			};
+    if (!cameras || cameras.length === 0) {
+      console.warn('No cameras found');
+      return false;
+    }
 
-		console.log('Requesting camera access with constraints:', constraints);
-		const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-		console.log('Camera stream obtained:', mediaStream.getVideoTracks().map(t => ({ id: t.id, label: t.label, enabled: t.enabled, readyState: t.readyState })));
+    console.log(`Found ${cameras.length} camera(s):`, cameras);
 
-		stream = mediaStream;
+    // Use the first available camera
+    const camera = cameras[0];
+    currentDeviceId = camera.id;
 
-		// Use existing visible video element or create one
-		videoElement = document.getElementById('camera-viewport') as HTMLVideoElement;
-		if (!videoElement) {
-			// Fallback: create video element if not found in HTML
-			videoElement = document.createElement('video');
-			videoElement.id = 'camera-viewport';
-			videoElement.setAttribute('autoplay', 'true');
-			videoElement.setAttribute('playsinline', 'true');
-			const container = document.querySelector('.camera-viewport-container');
-			if (container) {
-				container.appendChild(videoElement);
-			} else {
-				document.body.appendChild(videoElement);
-			}
-		}
-		videoElement.srcObject = stream;
-		videoElement.muted = true; // Mute to avoid feedback
+    console.log(`Starting camera preview for: ${camera.name} (${camera.id})`);
 
-		// Ensure video element is visible
-		videoElement.style.display = 'block';
+    // Start camera preview using plugin command
+    try {
+      await invoke('start_camera_preview', { deviceId: camera.id });
+    } catch (previewError) {
+      console.warn(
+        'Plugin preview command failed, using getUserMedia fallback:',
+        previewError
+      );
+    }
 
-		// Wait for video to be ready
-		await new Promise<void>((resolve, reject) => {
-			if (!videoElement) {
-				reject(new Error('Video element not created'));
-				return;
-			}
+    // Set up video element for barcode scanning using getUserMedia
+    await setupVideoElement();
 
-			const timeout = setTimeout(() => {
-				reject(new Error('Video element timeout - stream may not be active'));
-			}, 10000); // Increased timeout to 10 seconds
+    // Initialize ZXing barcode reader
+    barcodeReader = new BrowserMultiFormatReader();
 
-			videoElement.onloadedmetadata = () => {
-				clearTimeout(timeout);
-				console.log('Video metadata loaded, dimensions:', videoElement?.videoWidth, 'x', videoElement?.videoHeight);
-				videoElement?.play()
-					.then(() => {
-						console.log('Video playback started');
-						resolve();
-					})
-					.catch((playError) => {
-						console.error('Video play error:', playError);
-						reject(playError);
-					});
-			};
+    // Start scanning for barcodes
+    startBarcodeScanning();
 
-			videoElement.onerror = (error) => {
-				clearTimeout(timeout);
-				console.error('Video element error:', error);
-				reject(new Error('Video element error'));
-			};
+    scanning = true;
+    console.log('Camera scanner started successfully');
 
-			// Check if stream tracks are active
-			const videoTracks = stream.getVideoTracks();
-			if (videoTracks.length === 0) {
-				clearTimeout(timeout);
-				reject(new Error('No video tracks in stream'));
-				return;
-			}
+    return true;
+  } catch (error) {
+    console.error('Failed to start camera scanner:', error);
+    scanning = false;
+    await cleanup();
+    return false;
+  }
+}
 
-			console.log('Video tracks:', videoTracks.map(t => ({
-				id: t.id,
-				label: t.label,
-				enabled: t.enabled,
-				readyState: t.readyState,
-				muted: t.muted
-			})));
-		});
+// Set up video element to display camera feed and scan for barcodes
+async function setupVideoElement(): Promise<void> {
+  // Create or get video element
+  if (!videoElement) {
+    videoElement = document.createElement('video');
+    videoElement.style.position = 'fixed';
+    videoElement.style.top = '0';
+    videoElement.style.left = '0';
+    videoElement.style.width = '1px';
+    videoElement.style.height = '1px';
+    videoElement.style.opacity = '0';
+    videoElement.style.pointerEvents = 'none';
+    videoElement.autoplay = true;
+    videoElement.playsInline = true;
+    videoElement.muted = true;
+    document.body.appendChild(videoElement);
+  }
 
-		// Initialize ZXing reader
-		codeReader = new BrowserMultiFormatReader();
+  // Try to get user media stream
+  try {
+    // Get available video devices first to find the right one
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoDevices = devices.filter(
+      (device) => device.kind === 'videoinput'
+    );
 
-		scanning = true;
+    console.log(
+      'Available video devices:',
+      videoDevices.map((d) => ({ id: d.deviceId, label: d.label }))
+    );
 
-		// Start continuous scanning using ZXing's continuous decode API
-		if (videoElement && codeReader) {
-			// Use decodeFromVideoDevice with continuous scanning
-			codeReader.decodeFromVideoDevice(null, videoElement, (result: Result | null, err: Exception | undefined) => {
-				if (err) {
-					// NotFoundException is expected when no barcode is found - ignore it
-					if (!(err instanceof NotFoundException)) {
-						console.error('Camera scan error:', err);
-					}
-					return;
-				}
+    // Try to match device ID or use first available
+    let constraints: MediaStreamConstraints;
+    if (currentDeviceId && videoDevices.length > 0) {
+      // Try to find matching device
+      const deviceId = currentDeviceId; // TypeScript now knows this is not null
+      const matchingDevice = videoDevices.find(
+        (d) => d.deviceId === deviceId || d.deviceId.includes(deviceId)
+      );
+      if (matchingDevice) {
+        constraints = {
+          video: {
+            deviceId: { exact: matchingDevice.deviceId },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        };
+      } else {
+        // Use first available device
+        constraints = {
+          video: {
+            deviceId: { exact: videoDevices[0].deviceId },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        };
+      }
+    } else {
+      // Fallback: use any available camera
+      constraints = {
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      };
+    }
 
-				if (result?.getText()) {
-					const rawData = result.getText();
-					const onecard = parseBarcodeData(rawData);
+    cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+    videoElement.srcObject = cameraStream;
+    await videoElement.play();
 
-					if (onecard) {
-						console.log('Camera barcode scanned:', onecard);
-						// Emit event that HIDManager can listen to
-						emitBarcodeData(onecard).catch((emitErr: unknown) => {
-							console.error('Failed to emit barcode data:', emitErr);
-						});
-					} else {
-						console.warn('Barcode scanned but format invalid:', rawData);
-					}
-				}
-			});
-		}
+    console.log('Video element set up successfully');
+  } catch (error) {
+    console.error('Failed to set up video element:', error);
+    throw error;
+  }
+}
 
-		console.log('Camera scanner started successfully');
-		return true;
-	} catch (error) {
-		console.error('Failed to start camera scanner:', error);
-		if (error instanceof Error) {
-			console.error('Error name:', error.name);
-			console.error('Error message:', error.message);
-			console.error('Error stack:', error.stack);
-		}
-		if (error instanceof DOMException) {
-			console.error('DOMException code:', error.code);
-			console.error('DOMException name:', error.name);
-		}
-		// Check if it's a permission error
-		if (error instanceof Error && (
-			error.name === 'NotAllowedError' ||
-			error.name === 'PermissionDeniedError' ||
-			error.message.includes('permission') ||
-			error.message.includes('denied')
-		)) {
-			console.error('Camera permission denied. Please grant camera permissions to the application.');
-		}
-		stopCameraScanner();
-		return false;
-	}
+// Cleanup function
+async function cleanup(): Promise<void> {
+  if (scanInterval) {
+    clearInterval(scanInterval);
+    scanInterval = null;
+  }
+
+  if (cameraStream) {
+    cameraStream.getTracks().forEach((track) => track.stop());
+    cameraStream = null;
+  }
+
+  if (videoElement) {
+    videoElement.srcObject = null;
+    videoElement.remove();
+    videoElement = null;
+  }
+
+  if (barcodeReader) {
+    barcodeReader.reset();
+    barcodeReader = null;
+  }
+}
+
+// Start scanning for barcodes in video frames
+function startBarcodeScanning(): void {
+  if (!videoElement || !barcodeReader) {
+    console.error('Video element or barcode reader not initialized');
+    return;
+  }
+
+  // Scan every 300ms to balance between responsiveness and CPU usage
+  scanInterval = window.setInterval(async () => {
+    if (!videoElement || !barcodeReader || !scanning) {
+      return;
+    }
+
+    // Check if video has enough data
+    if (videoElement.readyState !== videoElement.HAVE_ENOUGH_DATA) {
+      return;
+    }
+
+    // Check cooldown period
+    const now = Date.now();
+    if (now - lastScanTime < SCAN_COOLDOWN) {
+      return;
+    }
+
+    try {
+      // Decode barcode from video frame
+      const result = await barcodeReader.decodeFromVideoElement(videoElement);
+
+      const barcodeText = result?.getText();
+      if (barcodeText) {
+        console.log('Barcode detected:', barcodeText);
+
+        // Parse barcode format ^1234567^ to extract OneCard number
+        const onecardMatch = barcodeText.match(/^\^(\d+)\^$/);
+        if (onecardMatch) {
+          const onecard = onecardMatch[1];
+
+          // Prevent duplicate scans of the same code
+          if (
+            lastScannedCode === onecard &&
+            now - lastScanTime < SCAN_COOLDOWN
+          ) {
+            return;
+          }
+
+          lastScannedCode = onecard;
+          lastScanTime = now;
+
+          // Emit custom event for barcode data (same format as HID scanner)
+          const event = new CustomEvent('camera-barcode-data', {
+            detail: { payload: onecard },
+          });
+          window.dispatchEvent(event);
+
+          console.log(
+            'Emitted camera-barcode-data event with onecard:',
+            onecard
+          );
+        } else {
+          console.warn('Barcode format not recognized:', barcodeText);
+        }
+      }
+    } catch (error) {
+      // Ignore decode errors (no barcode found in frame)
+      // NotFoundException is expected when no barcode is present
+      if (error && typeof error === 'object' && 'name' in error) {
+        const errorName = (error as { name?: string }).name;
+        if (
+          errorName !== 'NotFoundException' &&
+          errorName !== 'No QR Code Found'
+        ) {
+          console.debug('Barcode scan error:', error);
+        }
+      }
+    }
+  }, 300);
 }
 
 // Stop camera-based barcode scanning
-export function stopCameraScanner(): void {
-	scanning = false;
+export async function stopCameraScanner(): Promise<void> {
+  if (!scanning) {
+    return;
+  }
 
-	if (codeReader && videoElement) {
-		try {
-			codeReader.reset();
-		} catch (err) {
-			console.warn('Error resetting code reader:', err);
-		}
-	}
+  try {
+    scanning = false;
 
-	if (scanInterval !== null) {
-		clearTimeout(scanInterval);
-		scanInterval = null;
-	}
+    // Stop camera preview if device ID is set
+    if (currentDeviceId) {
+      try {
+        await invoke('stop_camera_preview', { deviceId: currentDeviceId });
+      } catch (error) {
+        console.warn('Failed to stop camera preview via plugin:', error);
+      }
+      currentDeviceId = null;
+    }
 
-	if (scanningPromise) {
-		scanningPromise = null;
-	}
+    // Cleanup all resources
+    await cleanup();
 
-	if (stream) {
-		stream.getTracks().forEach(track => track.stop());
-		stream = null;
-	}
+    // Reset state
+    lastScannedCode = null;
+    lastScanTime = 0;
 
-	if (videoElement) {
-		videoElement.srcObject = null;
-		// Don't remove the persistent viewport element from HTML
-		// Only remove if it was dynamically created (doesn't have the id or wasn't in HTML originally)
-		const persistentElement = document.getElementById('camera-viewport');
-		if (!persistentElement || persistentElement !== videoElement) {
-			videoElement.remove();
-		}
-		videoElement = null;
-	}
-
-	codeReader = null;
-	console.log('Camera scanner stopped');
+    console.log('Camera scanner stopped');
+  } catch (error) {
+    console.error('Failed to stop camera scanner:', error);
+  }
 }
 
 // Check if camera scanner is running
-export function isCameraScannerRunning(): boolean {
-	return scanning;
+export async function isCameraScannerRunning(): Promise<boolean> {
+  return scanning;
 }
-

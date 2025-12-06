@@ -384,6 +384,7 @@ fn main() {
         b
     };
     builder
+        .plugin(crabcamera::init())
         .manage(config_manager)
         .manage(hid_manager)
         .invoke_handler(tauri::generate_handler![

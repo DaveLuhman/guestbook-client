@@ -127,30 +127,6 @@ h1 {
   font-weight: 400;
 }
 
-/* Camera viewport styles */
-.camera-viewport-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  width: 100%;
-  margin-top: 20px;
-}
-
-#camera-viewport {
-  width: 100%;
-  max-width: 640px;
-  max-height: 480px;
-  border: 3px solid white;
-  border-radius: 10px;
-  background-color: #000;
-  object-fit: contain;
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
-}
-
-#camera-viewport:not([srcObject]) {
-  display: none;
-}
-
 /* Entry row styles for when data is displayed */
 .entry-row {
   display: flex;
