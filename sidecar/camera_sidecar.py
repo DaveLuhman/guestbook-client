@@ -116,6 +116,10 @@ def barcode_decode_loop():
                 bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                 barcodes = decode_barcodes(bgr)
 
+                # Debug: log frame processing periodically
+                if int(time.time() * 10) % 50 == 0:  # Every ~5 seconds
+                    print(f"[DECODE] Processing frame, found {len(barcodes)} barcode(s)")
+
                 now = time.time() * 1000
 
                 for bc in barcodes:
@@ -123,9 +127,12 @@ def barcode_decode_loop():
                     if not code:
                         continue
 
+                    print(f"[DECODE] Detected barcode: {code}")
+
                     # Debounce: ignore if same code within debounce window
                     if code == last_code and (now - last_time) < DEBOUNCE_MS:
                         # Same label still in front of camera, ignore
+                        print(f"[DECODE] Ignoring duplicate (debounce): {code}")
                         continue
 
                     # New scan detected
@@ -138,7 +145,7 @@ def barcode_decode_loop():
                         }
                         camera_error = None  # Clear any previous error
 
-                    print(f"Scan #{latest_scan_id}: {code}")
+                    print(f"[DECODE] Scan #{latest_scan_id}: {code}")
 
                     last_code = code
                     last_time = now
@@ -156,11 +163,15 @@ def barcode_decode_loop():
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint"""
+    print(f"[HTTP] GET /health")
     with scan_lock:
         if camera_error:
+            print(f"[HTTP] /health returning error: {camera_error}")
             return jsonify({"status": "error", "error": camera_error}), 500
         if picam2 is None and running:
+            print(f"[HTTP] /health returning error: Camera not initialized")
             return jsonify({"status": "error", "error": "Camera not initialized"}), 500
+    print(f"[HTTP] /health returning OK")
     return jsonify({"status": "ok"})
 
 
@@ -209,6 +220,8 @@ def next_scan():
             except ValueError:
                 since_id = 0
 
+        print(f"[HTTP] GET /next_scan?since_id={since_id}")
+
         # Check if there's already a new scan available
         with scan_lock:
             if camera_error:
@@ -220,12 +233,14 @@ def next_scan():
 
             if latest_scan is not None and latest_scan["id"] > since_id:
                 # Return immediately
+                print(f"[HTTP] /next_scan returning scan #{latest_scan['id']}: {latest_scan['code']}")
                 return jsonify({
                     "success": True,
                     **latest_scan
                 })
 
         # No new scan available, wait for one (long-polling)
+        print(f"[HTTP] /next_scan no new scan, long-polling (timeout={NEXT_SCAN_TIMEOUT}s)")
         deadline = time.time() + NEXT_SCAN_TIMEOUT
         start_id = since_id
 
@@ -235,6 +250,7 @@ def next_scan():
             with scan_lock:
                 # Check for errors
                 if camera_error:
+                    print(f"[HTTP] /next_scan error during poll: {camera_error}")
                     return jsonify({
                         "success": False,
                         "code": None,
@@ -243,6 +259,7 @@ def next_scan():
 
                 # Check for new scan
                 if latest_scan is not None and latest_scan["id"] > since_id:
+                    print(f"[HTTP] /next_scan found new scan #{latest_scan['id']}: {latest_scan['code']}")
                     return jsonify({
                         "success": True,
                         **latest_scan
@@ -251,6 +268,7 @@ def next_scan():
         # Timeout - no new scan
         with scan_lock:
             current_id = latest_scan["id"] if latest_scan else start_id
+        print(f"[HTTP] /next_scan timeout, returning (current_id={current_id})")
         return jsonify({
             "success": False,
             "id": current_id,

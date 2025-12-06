@@ -72,20 +72,23 @@ export function startScanStream(onScan: (scan: ScanEvent) => void): () => void {
   let lastId = 0;
 
   async function loop() {
+    console.log('[CameraSidecar] Starting scan stream loop...');
     while (!stopped) {
       try {
         // Long-poll for next scan
         const url = `${SIDECAR_BASE_URL}/next_scan?since_id=${lastId}`;
+        console.log(`[CameraSidecar] Polling ${url}`);
         const res = await fetch(url);
 
         if (!res.ok) {
-          console.error('Sidecar /next_scan HTTP error:', res.status);
+          console.error(`[CameraSidecar] /next_scan HTTP error: ${res.status}`);
           // Short delay before retry
           await new Promise((r) => setTimeout(r, 500));
           continue;
         }
 
         const json = await res.json();
+        console.log(`[CameraSidecar] Received response:`, json);
 
         if (json.success && json.code) {
           // New scan received
@@ -95,6 +98,7 @@ export function startScanStream(onScan: (scan: ScanEvent) => void): () => void {
             timestamp: json.timestamp ?? new Date().toISOString(),
           };
           lastId = scan.id;
+          console.log(`[CameraSidecar] New scan received: ${scan.code} (id: ${scan.id})`);
           onScan(scan);
           // Immediately continue loop to catch another scan
           continue;
@@ -102,13 +106,17 @@ export function startScanStream(onScan: (scan: ScanEvent) => void): () => void {
 
         // If we timed out or got no new scan, wait briefly then poll again
         // This handles the case where the long-poll timed out
+        if (json.timeout) {
+          console.log(`[CameraSidecar] Long-poll timeout, continuing...`);
+        }
         await new Promise((r) => setTimeout(r, 100));
       } catch (err) {
-        console.error('Error in scan stream loop:', err);
+        console.error('[CameraSidecar] Error in scan stream loop:', err);
         // Back off a bit on failures
         await new Promise((r) => setTimeout(r, 1000));
       }
     }
+    console.log('[CameraSidecar] Scan stream loop stopped');
   }
 
   // Start the loop asynchronously
