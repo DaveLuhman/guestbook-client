@@ -24,11 +24,13 @@ from pyzbar import pyzbar
 app = Flask(__name__)
 
 # Configuration
-DEFAULT_CAMERA_INDEX = 0
+# Try different camera device paths for Pi Camera
+CAMERA_DEVICES = ['/dev/video0', '/dev/video1', 0]  # Try V4L2 paths first, then index
 DEFAULT_RESOLUTION = (1280, 720)
 FRAME_CAPTURE_INTERVAL = 0.1  # ~10 FPS (100ms between frames)
 NEXT_SCAN_TIMEOUT = 8.0  # Long-poll timeout in seconds
 DEBOUNCE_MS = 800  # Ignore duplicate scans within this window (ms)
+CAMERA_WARMUP_FRAMES = 5  # Read a few frames to initialize camera before scanning
 
 # Shared state for scan queue
 scan_lock = threading.Lock()
@@ -42,6 +44,51 @@ camera_running = False
 camera_cap = None
 
 
+def open_camera():
+    """
+    Try to open the camera using V4L2 backend.
+    Attempts multiple device paths/indices to find a working camera.
+    """
+    for device in CAMERA_DEVICES:
+        try:
+            print(f"Attempting to open camera device: {device}")
+
+            # Try V4L2 backend explicitly for Pi Camera
+            if isinstance(device, str) and device.startswith('/dev/video'):
+                # Use V4L2 backend for device path
+                cap = cv2.VideoCapture(device, cv2.CAP_V4L2)
+            else:
+                # For numeric indices, try V4L2 backend first
+                cap = cv2.VideoCapture(device, cv2.CAP_V4L2)
+
+            if not cap.isOpened():
+                print(f"  Failed to open {device}, trying next...")
+                continue
+
+            # Set buffer size to reduce latency
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+            # Set resolution
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, DEFAULT_RESOLUTION[0])
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, DEFAULT_RESOLUTION[1])
+
+            # Try reading a frame to verify it works
+            ret, _ = cap.read()
+            if ret:
+                print(f"  Successfully opened camera at {device}")
+                return cap
+            else:
+                print(f"  Camera opened but failed to read frame from {device}")
+                cap.release()
+        except Exception as e:
+            print(f"  Exception opening {device}: {e}")
+            if 'cap' in locals():
+                cap.release()
+            continue
+
+    return None
+
+
 def capture_loop():
     """
     Continuously captures frames from the camera and decodes barcodes.
@@ -52,23 +99,41 @@ def capture_loop():
     print("Starting camera capture loop...")
 
     try:
-        # Open camera once
-        camera_cap = cv2.VideoCapture(DEFAULT_CAMERA_INDEX)
+        # Open camera with V4L2 backend
+        camera_cap = open_camera()
 
-        if not camera_cap.isOpened():
+        if camera_cap is None:
             with scan_lock:
-                camera_error = "Could not open camera"
+                camera_error = "Could not open camera - tried all available devices"
             print(f"ERROR: {camera_error}")
             return
 
-        # Set resolution
-        camera_cap.set(cv2.CAP_PROP_FRAME_WIDTH, DEFAULT_RESOLUTION[0])
-        camera_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, DEFAULT_RESOLUTION[1])
+        # Get actual resolution
+        actual_width = int(camera_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        actual_height = int(camera_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        print(f"Camera opened successfully at {actual_width}x{actual_height}")
 
-        print(f"Camera opened successfully at {DEFAULT_RESOLUTION[0]}x{DEFAULT_RESOLUTION[1]}")
+        # Warm up: read a few frames to initialize the camera
+        print("Warming up camera...")
+        warmup_failures = 0
+        for i in range(CAMERA_WARMUP_FRAMES):
+            ret, _ = camera_cap.read()
+            if not ret:
+                warmup_failures += 1
+                if warmup_failures >= CAMERA_WARMUP_FRAMES:
+                    with scan_lock:
+                        camera_error = "Camera opened but cannot read frames"
+                    print(f"ERROR: {camera_error}")
+                    camera_cap.release()
+                    camera_cap = None
+                    return
+            time.sleep(0.1)
+        print("Camera warmup complete")
 
         last_code = None
         last_code_time = 0
+        consecutive_failures = 0
+        max_consecutive_failures = 10
 
         while camera_running:
             try:
@@ -76,9 +141,18 @@ def capture_loop():
                 ret, frame = camera_cap.read()
 
                 if not ret:
-                    print("Warning: Failed to read frame from camera")
-                    time.sleep(FRAME_CAPTURE_INTERVAL)
+                    consecutive_failures += 1
+                    if consecutive_failures >= max_consecutive_failures:
+                        print(f"ERROR: {consecutive_failures} consecutive frame read failures")
+                        with scan_lock:
+                            camera_error = f"Camera read failure after {consecutive_failures} attempts"
+                        break
+                    # Brief delay before retry
+                    time.sleep(FRAME_CAPTURE_INTERVAL * 2)
                     continue
+
+                # Reset failure counter on successful read
+                consecutive_failures = 0
 
                 # Decode barcodes from frame
                 barcodes = pyzbar.decode(frame)
@@ -113,8 +187,11 @@ def capture_loop():
 
             except Exception as e:
                 print(f"Error in capture loop: {e}")
-                with scan_lock:
-                    camera_error = f"Camera error: {str(e)}"
+                consecutive_failures += 1
+                if consecutive_failures >= max_consecutive_failures:
+                    with scan_lock:
+                        camera_error = f"Camera error: {str(e)}"
+                    break
                 time.sleep(1)  # Back off on errors
 
     except Exception as e:
