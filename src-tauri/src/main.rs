@@ -485,15 +485,16 @@ fn main() {
 
             // Cleanup scanner sidecar on app exit
             let app_handle = app.handle().clone();
-            let scanner_proc = app.state::<ScannerProc>();
-            app.handle().listen("tauri://close-requested", move |_| {
+            app_handle.listen("tauri://close-requested", move |_| {
                 log::info!("App closing, stopping camera sidecar...");
-                if let Ok(mut proc_guard) = scanner_proc.0.lock() {
-                    if let Some(child) = proc_guard.take() {
-                        if let Err(e) = child.kill() {
-                            log::error!("Failed to kill camera sidecar on exit: {}", e);
-                        } else {
-                            log::info!("Camera sidecar stopped on app exit");
+                if let Ok(scanner_proc) = app_handle.try_state::<ScannerProc>() {
+                    if let Ok(mut proc_guard) = scanner_proc.0.lock() {
+                        if let Some(child) = proc_guard.take() {
+                            if let Err(e) = child.kill() {
+                                log::error!("Failed to kill camera sidecar on exit: {}", e);
+                            } else {
+                                log::info!("Camera sidecar stopped on app exit");
+                            }
                         }
                     }
                 }
