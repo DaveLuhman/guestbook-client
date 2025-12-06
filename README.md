@@ -1,4 +1,4 @@
-# Guestbook Kiosk Client
+# Guestbook Kiosk Client 
 
 A modern, cross-platform kiosk application built with Tauri (Rust + TypeScript) for capturing guest entries from HID devices and submitting them to a central API.
 

@@ -211,7 +211,7 @@ def barcode_decode_loop():
                     except:
                         pass
                 barcodes = unique_barcodes
-
+                
                 # Debug: log frame processing every 50 decodes (~2.5 seconds)
                 if decode_count % 50 == 0:
                     print(f"[DECODE] Processed {decode_count} frames, current frame: {len(barcodes)} barcode(s)")
