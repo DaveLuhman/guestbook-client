@@ -1,4 +1,3 @@
-import { invoke } from '@tauri-apps/api/core';
 import { BrowserMultiFormatReader } from '@zxing/library';
 
 let scanning = false;
@@ -11,7 +10,7 @@ let lastScannedCode: string | null = null;
 let lastScanTime: number = 0;
 const SCAN_COOLDOWN = 1000; // Prevent duplicate scans within 1 second
 
-// Initialize camera system and start scanning
+// Initialize camera system and start scanning using browser APIs
 export async function startCameraScanner(): Promise<boolean> {
   if (scanning) {
     console.log('Camera scanner already running');
@@ -19,37 +18,12 @@ export async function startCameraScanner(): Promise<boolean> {
   }
 
   try {
-    console.log('Initializing camera system...');
+    console.log('Initializing camera system using browser APIs...');
 
-    // Initialize the camera system
-    await invoke('initialize_camera_system');
-
-    // Get available cameras
-    const cameras = await invoke<Array<{ id: string; name: string }>>(
-      'get_available_cameras'
-    );
-
-    if (!cameras || cameras.length === 0) {
-      console.warn('No cameras found');
+    // Check if browser supports mediaDevices API
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      console.error('Browser does not support getUserMedia API');
       return false;
-    }
-
-    console.log(`Found ${cameras.length} camera(s):`, cameras);
-
-    // Use the first available camera
-    const camera = cameras[0];
-    currentDeviceId = camera.id;
-
-    console.log(`Starting camera preview for: ${camera.name} (${camera.id})`);
-
-    // Start camera preview using plugin command
-    try {
-      await invoke('start_camera_preview', { deviceId: camera.id });
-    } catch (previewError) {
-      console.warn(
-        'Plugin preview command failed, using getUserMedia fallback:',
-        previewError
-      );
     }
 
     // Set up video element for barcode scanning using getUserMedia
@@ -93,22 +67,37 @@ async function setupVideoElement(): Promise<void> {
 
   // Try to get user media stream
   try {
-    // Get available video devices first to find the right one
+    // Request permission first (some browsers require this before enumerateDevices returns labels)
+    // We'll use a temporary stream to get permission, then enumerate devices
+    let tempStream: MediaStream | null = null;
+    try {
+      tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      // Stop the temporary stream after getting permission
+      tempStream.getTracks().forEach((track) => track.stop());
+    } catch (permError) {
+      console.warn('Permission request failed, trying without device selection:', permError);
+    }
+
+    // Get available video devices
     const devices = await navigator.mediaDevices.enumerateDevices();
     const videoDevices = devices.filter(
       (device) => device.kind === 'videoinput'
     );
 
+    if (videoDevices.length === 0) {
+      throw new Error('No video input devices found');
+    }
+
     console.log(
-      'Available video devices:',
-      videoDevices.map((d) => ({ id: d.deviceId, label: d.label }))
+      `Found ${videoDevices.length} video device(s):`,
+      videoDevices.map((d) => ({ id: d.deviceId, label: d.label || 'Unknown' }))
     );
 
     // Try to match device ID or use first available
     let constraints: MediaStreamConstraints;
     if (currentDeviceId && videoDevices.length > 0) {
       // Try to find matching device
-      const deviceId = currentDeviceId; // TypeScript now knows this is not null
+      const deviceId = currentDeviceId;
       const matchingDevice = videoDevices.find(
         (d) => d.deviceId === deviceId || d.deviceId.includes(deviceId)
       );
@@ -120,6 +109,7 @@ async function setupVideoElement(): Promise<void> {
             height: { ideal: 720 },
           },
         };
+        console.log(`Using matched device: ${matchingDevice.label || matchingDevice.deviceId}`);
       } else {
         // Use first available device
         constraints = {
@@ -129,6 +119,7 @@ async function setupVideoElement(): Promise<void> {
             height: { ideal: 720 },
           },
         };
+        console.log(`Using first available device: ${videoDevices[0].label || videoDevices[0].deviceId}`);
       }
     } else {
       // Fallback: use any available camera
@@ -138,6 +129,15 @@ async function setupVideoElement(): Promise<void> {
           height: { ideal: 720 },
         },
       };
+      console.log('Using default camera');
+    }
+
+    // Store the device ID for later use
+    if (constraints.video && typeof constraints.video === 'object' && 'deviceId' in constraints.video) {
+      const deviceIdObj = constraints.video.deviceId as { exact?: string };
+      if (deviceIdObj.exact) {
+        currentDeviceId = deviceIdObj.exact;
+      }
     }
 
     cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -262,20 +262,11 @@ export async function stopCameraScanner(): Promise<void> {
   try {
     scanning = false;
 
-    // Stop camera preview if device ID is set
-    if (currentDeviceId) {
-      try {
-        await invoke('stop_camera_preview', { deviceId: currentDeviceId });
-      } catch (error) {
-        console.warn('Failed to stop camera preview via plugin:', error);
-      }
-      currentDeviceId = null;
-    }
-
-    // Cleanup all resources
+    // Cleanup all resources (browser API handles stopping the stream)
     await cleanup();
 
     // Reset state
+    currentDeviceId = null;
     lastScannedCode = null;
     lastScanTime = 0;
 
