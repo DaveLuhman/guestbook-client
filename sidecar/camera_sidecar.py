@@ -20,6 +20,7 @@ from flask import Flask, jsonify, request
 from threading import Thread, Lock
 from picamera2 import Picamera2
 import cv2
+import numpy as np
 from pyzbar.pyzbar import decode as decode_barcodes
 
 app = Flask(__name__)
@@ -55,20 +56,38 @@ def camera_capture_loop():
         pic = Picamera2()
         picam2 = pic
 
-        # Simple 640x480 RGB config
+        # Use higher resolution for better barcode detection
+        # 1280x720 gives better detail for small barcodes
         config = pic.create_video_configuration(
-            main={"size": (640, 480), "format": "RGB888"}
+            main={"size": (1280, 720), "format": "RGB888"}
         )
         pic.configure(config)
         pic.start()
 
-        print("Camera opened successfully (640x480 RGB)")
+        print("Camera opened successfully (1280x720 RGB)")
 
+        # Capture a test frame to verify camera is working
+        try:
+            test_frame = pic.capture_array()
+            print(f"[CAPTURE] Test frame captured: shape={test_frame.shape}, dtype={test_frame.dtype}")
+            # Save test frame for debugging
+            cv2.imwrite('/tmp/camera_test_frame.jpg', cv2.cvtColor(test_frame, cv2.COLOR_RGB2BGR))
+            print("[CAPTURE] Test frame saved to /tmp/camera_test_frame.jpg")
+        except Exception as e:
+            print(f"[CAPTURE] Failed to capture test frame: {e}")
+
+        frame_count = 0
         while running:
             try:
                 frame = pic.capture_array()
+                frame_count += 1
                 with frame_lock:
                     latest_frame = frame
+
+                # Log every 50 frames (~3.5 seconds at 14fps)
+                if frame_count % 50 == 0:
+                    print(f"[CAPTURE] Captured {frame_count} frames, latest frame shape: {frame.shape}")
+
             except Exception as e:
                 print(f"Error capturing frame: {e}")
                 with scan_lock:
@@ -104,6 +123,7 @@ def barcode_decode_loop():
     last_code = None
     last_time = 0.0
 
+    decode_count = 0
     while running:
         try:
             frame = None
@@ -112,22 +132,32 @@ def barcode_decode_loop():
                     frame = latest_frame.copy()
 
             if frame is not None:
+                decode_count += 1
                 # Picamera2 gives RGB, OpenCV/pyzbar likes BGR
                 bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                 barcodes = decode_barcodes(bgr)
 
-                # Debug: log frame processing periodically
-                if int(time.time() * 10) % 50 == 0:  # Every ~5 seconds
-                    print(f"[DECODE] Processing frame, found {len(barcodes)} barcode(s)")
+                # Debug: log frame processing every 50 decodes (~2.5 seconds)
+                if decode_count % 50 == 0:
+                    print(f"[DECODE] Processed {decode_count} frames, current frame: {len(barcodes)} barcode(s)")
+                    # Save a sample frame for debugging
+                    if decode_count == 50:
+                        cv2.imwrite('/tmp/decode_sample_frame.jpg', bgr)
+                        print("[DECODE] Sample decode frame saved to /tmp/decode_sample_frame.jpg")
 
                 now = time.time() * 1000
 
                 for bc in barcodes:
-                    code = bc.data.decode("utf-8").strip()
-                    if not code:
-                        continue
+                    try:
+                        code = bc.data.decode("utf-8").strip()
+                        if not code:
+                            print(f"[DECODE] Found barcode but code is empty")
+                            continue
 
-                    print(f"[DECODE] Detected barcode: {code}")
+                        print(f"[DECODE] Detected barcode: {code} (type: {bc.type})")
+                    except Exception as decode_err:
+                        print(f"[DECODE] Error decoding barcode data: {decode_err}")
+                        continue
 
                     # Debounce: ignore if same code within debounce window
                     if code == last_code and (now - last_time) < DEBOUNCE_MS:
@@ -158,6 +188,42 @@ def barcode_decode_loop():
             with scan_lock:
                 camera_error = f"Barcode decode error: {str(e)}"
             time.sleep(1)  # Back off on errors
+
+
+@app.route('/debug/frame', methods=['GET'])
+def debug_frame():
+    """Debug endpoint to capture and save current frame"""
+    try:
+        with frame_lock:
+            if latest_frame is None:
+                return jsonify({"error": "No frame available"}), 404
+
+            frame = latest_frame.copy()
+
+        # Convert RGB to BGR and save
+        bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        filename = f'/tmp/debug_frame_{int(time.time())}.jpg'
+        cv2.imwrite(filename, bgr)
+
+        # Try to decode barcodes from this frame
+        barcodes = decode_barcodes(bgr)
+        detected = []
+        for bc in barcodes:
+            try:
+                code = bc.data.decode("utf-8").strip()
+                detected.append({"code": code, "type": bc.type})
+            except:
+                pass
+
+        return jsonify({
+            "success": True,
+            "frame_saved": filename,
+            "frame_shape": list(frame.shape),
+            "barcodes_found": len(barcodes),
+            "barcodes": detected
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/health', methods=['GET'])
