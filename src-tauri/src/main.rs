@@ -485,7 +485,7 @@ fn main() {
 
             // Cleanup scanner sidecar on app exit
             let app_handle = app.handle().clone();
-            app_handle.listen("tauri://close-requested", move |_| {
+            app_handle.clone().listen("tauri://close-requested", move |_| {
                 log::info!("App closing, stopping camera sidecar...");
                 if let Some(scanner_proc) = app_handle.try_state::<ScannerProc>() {
                     if let Ok(mut proc_guard) = scanner_proc.0.lock() {
