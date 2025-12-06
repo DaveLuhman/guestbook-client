@@ -17,7 +17,8 @@ use tauri_plugin_shell::ShellExt;
 
 use api::entries::{submit_entry, CardData};
 use std::sync::Mutex;
-use tauri_plugin_shell::process::CommandChild;
+use std::process::{Command, Child};
+use std::path::PathBuf;
 
 #[tauri::command]
 fn get_hid_devices() -> Vec<String> {
@@ -339,8 +340,8 @@ fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
-// Sidecar process state holder
-struct ScannerProc(Mutex<Option<CommandChild>>);
+// Scanner process state holder
+struct ScannerProc(Mutex<Option<Child>>);
 
 #[tauri::command]
 async fn start_camera_sidecar(
@@ -357,14 +358,46 @@ async fn start_camera_sidecar(
 
     log::info!("Starting camera sidecar...");
 
-    // Spawn the sidecar process
-    // spawn() returns (Receiver<CommandEvent>, CommandChild), we only need the CommandChild
-    let (_rx, child) = app
-        .shell()
-        .sidecar("camera-scanner")
-        .map_err(|e| format!("Failed to create sidecar command: {}", e))?
+    // Find the Python script path
+    // Try multiple possible locations relative to current working directory
+    let script_paths = vec![
+        // Development path (when running from project root)
+        PathBuf::from("sidecar/camera_sidecar.py"),
+        // Development path (when running from src-tauri/)
+        PathBuf::from("../sidecar/camera_sidecar.py"),
+        // Alternative development path
+        PathBuf::from("../../sidecar/camera_sidecar.py"),
+        // System installation path
+        PathBuf::from("/usr/share/guestbook-kiosk/sidecar/camera_sidecar.py"),
+    ];
+
+    let mut script_path = None;
+    for path in &script_paths {
+        if path.exists() {
+            script_path = Some(path.canonicalize().map_err(|e| {
+                format!("Failed to canonicalize path {:?}: {}", path, e)
+            })?);
+            break;
+        }
+    }
+
+    let script_path = script_path.ok_or_else(|| {
+        format!(
+            "Could not find camera_sidecar.py. Tried: {:?}",
+            script_paths
+        )
+    })?;
+
+    log::info!("Found camera sidecar script at: {:?}", script_path);
+
+    // Spawn Python process directly
+    let child = Command::new("python3")
+        .arg(&script_path)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
         .spawn()
-        .map_err(|e| format!("Failed to spawn camera sidecar: {}", e))?;
+        .map_err(|e| format!("Failed to spawn camera sidecar: {} (script: {:?})", e, script_path))?;
 
     *proc_guard = Some(child);
     log::info!("Camera sidecar started successfully");
@@ -378,9 +411,11 @@ async fn stop_camera_sidecar(
 ) -> Result<(), String> {
     let mut proc_guard = scanner.0.lock().map_err(|e| format!("Failed to lock scanner state: {}", e))?;
 
-    if let Some(child) = proc_guard.take() {
+    if let Some(mut child) = proc_guard.take() {
         log::info!("Stopping camera sidecar...");
         child.kill().map_err(|e| format!("Failed to kill camera sidecar: {}", e))?;
+        // Wait for process to exit (with timeout)
+        let _ = child.wait();
         log::info!("Camera sidecar stopped");
     } else {
         log::info!("Camera sidecar was not running");
@@ -489,10 +524,11 @@ fn main() {
                 log::info!("App closing, stopping camera sidecar...");
                 if let Some(scanner_proc) = app_handle.try_state::<ScannerProc>() {
                     if let Ok(mut proc_guard) = scanner_proc.0.lock() {
-                        if let Some(child) = proc_guard.take() {
+                        if let Some(mut child) = proc_guard.take() {
                             if let Err(e) = child.kill() {
                                 log::error!("Failed to kill camera sidecar on exit: {}", e);
                             } else {
+                                let _ = child.wait();
                                 log::info!("Camera sidecar stopped on app exit");
                             }
                         }
