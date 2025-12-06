@@ -21,7 +21,7 @@ from threading import Thread, Lock
 from picamera2 import Picamera2
 import cv2
 import numpy as np
-from pyzbar.pyzbar import decode as decode_barcodes
+from pyzbar.pyzbar import decode as decode_barcodes, ZBarSymbol
 
 app = Flask(__name__)
 
@@ -62,7 +62,24 @@ def camera_capture_loop():
             main={"size": (1280, 720), "format": "RGB888"}
         )
         pic.configure(config)
+
+        # Enable autofocus
+        try:
+            pic.set_controls({"AfMode": 1, "AfTrigger": 0})  # Continuous autofocus
+            print("[CAPTURE] Autofocus enabled (continuous mode)")
+        except Exception as e:
+            print(f"[CAPTURE] Warning: Could not enable autofocus: {e}")
+            # Try alternative autofocus method
+            try:
+                pic.set_controls({"AfMode": 2})  # Auto mode
+                print("[CAPTURE] Autofocus enabled (auto mode)")
+            except Exception as e2:
+                print(f"[CAPTURE] Warning: Alternative autofocus also failed: {e2}")
+
         pic.start()
+
+        # Wait a moment for autofocus to settle
+        time.sleep(1.0)
 
         print("Camera opened successfully (1280x720 RGB)")
 
@@ -135,7 +152,57 @@ def barcode_decode_loop():
                 decode_count += 1
                 # Picamera2 gives RGB, OpenCV/pyzbar likes BGR
                 bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                barcodes = decode_barcodes(bgr)
+
+                # Preprocess image for better barcode detection
+                # Convert to grayscale (pyzbar works better on grayscale)
+                gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+
+                # Try multiple preprocessing approaches
+                processed_images = [
+                    ("original_bgr", bgr),
+                    ("grayscale", gray),
+                    ("grayscale_contrast", cv2.convertScaleAbs(gray, alpha=1.5, beta=30)),  # Increase contrast
+                    ("grayscale_sharpened", cv2.filter2D(gray, -1, np.array([[-1,-1,-1],[-1,9,-1],[-1,-1,-1]]))),  # Sharpen
+                    ("grayscale_threshold", cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]),  # Adaptive threshold
+                ]
+
+                barcodes = []
+                for method_name, processed_img in processed_images:
+                    try:
+                        # Try decoding with all barcode types enabled
+                        detected = decode_barcodes(processed_img, symbols=[
+                            ZBarSymbol.CODE128,
+                            ZBarSymbol.CODE39,
+                            ZBarSymbol.EAN13,
+                            ZBarSymbol.EAN8,
+                            ZBarSymbol.UPCA,
+                            ZBarSymbol.UPCE,
+                            ZBarSymbol.I25,
+                            ZBarSymbol.CODABAR,
+                        ])
+                        if detected:
+                            barcodes.extend(detected)
+                            if decode_count % 50 == 0:
+                                print(f"[DECODE] Found {len(detected)} barcode(s) using {method_name}")
+                            # If we found barcodes, we can stop trying other methods
+                            break
+                    except Exception as e:
+                        if decode_count % 50 == 0:
+                            print(f"[DECODE] Error with {method_name}: {e}")
+                        continue
+
+                # Remove duplicates (same code detected multiple times)
+                seen_codes = set()
+                unique_barcodes = []
+                for bc in barcodes:
+                    try:
+                        code = bc.data.decode("utf-8").strip()
+                        if code and code not in seen_codes:
+                            seen_codes.add(code)
+                            unique_barcodes.append(bc)
+                    except:
+                        pass
+                barcodes = unique_barcodes
 
                 # Debug: log frame processing every 50 decodes (~2.5 seconds)
                 if decode_count % 50 == 0:
@@ -205,13 +272,50 @@ def debug_frame():
         filename = f'/tmp/debug_frame_{int(time.time())}.jpg'
         cv2.imwrite(filename, bgr)
 
-        # Try to decode barcodes from this frame
-        barcodes = decode_barcodes(bgr)
+        # Try to decode barcodes from this frame using multiple preprocessing methods
+        gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+
+        processed_images = [
+            ("original_bgr", bgr),
+            ("grayscale", gray),
+            ("grayscale_contrast", cv2.convertScaleAbs(gray, alpha=1.5, beta=30)),
+            ("grayscale_sharpened", cv2.filter2D(gray, -1, np.array([[-1,-1,-1],[-1,9,-1],[-1,-1,-1]]))),
+            ("grayscale_threshold", cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]),
+        ]
+
+        all_barcodes = []
+        results_by_method = {}
+
+        for method_name, processed_img in processed_images:
+            try:
+                barcodes = decode_barcodes(processed_img, symbols=[
+                    ZBarSymbol.CODE128,
+                    ZBarSymbol.CODE39,
+                    ZBarSymbol.EAN13,
+                    ZBarSymbol.EAN8,
+                    ZBarSymbol.UPCA,
+                    ZBarSymbol.UPCE,
+                    ZBarSymbol.I25,
+                    ZBarSymbol.CODABAR,
+                ])
+                results_by_method[method_name] = len(barcodes)
+                if barcodes:
+                    all_barcodes.extend(barcodes)
+                    # Save the successful preprocessing result
+                    method_filename = filename.replace('.jpg', f'_{method_name}.jpg')
+                    cv2.imwrite(method_filename, processed_img)
+            except Exception as e:
+                results_by_method[method_name] = f"error: {str(e)}"
+
+        # Remove duplicates
+        seen_codes = set()
         detected = []
-        for bc in barcodes:
+        for bc in all_barcodes:
             try:
                 code = bc.data.decode("utf-8").strip()
-                detected.append({"code": code, "type": bc.type})
+                if code and code not in seen_codes:
+                    seen_codes.add(code)
+                    detected.append({"code": code, "type": bc.type})
             except:
                 pass
 
@@ -219,8 +323,9 @@ def debug_frame():
             "success": True,
             "frame_saved": filename,
             "frame_shape": list(frame.shape),
-            "barcodes_found": len(barcodes),
-            "barcodes": detected
+            "barcodes_found": len(detected),
+            "barcodes": detected,
+            "decode_results_by_method": results_by_method
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
