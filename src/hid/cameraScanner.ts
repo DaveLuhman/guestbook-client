@@ -9,7 +9,7 @@
  * streams barcode scans via long-polling. No user interaction is required.
  */
 
-import { checkSidecarHealth, startScanStream, type ScanEvent } from '../cameraSidecarClient';
+import { checkSidecarHealth, type ScanEvent, startScanStream } from '../cameraSidecarClient';
 import { ensureScannerRunning } from '../lib/scanner';
 
 let scanning = false;

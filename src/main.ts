@@ -380,6 +380,24 @@ async function openConfig() {
         }
       }
 
+      // Set runtime environment (dev or release)
+      const runtimeEnvElement = document.getElementById('config-runtime-env');
+      if (runtimeEnvElement) {
+        // In Vite, import.meta.env.DEV is true in dev mode, false in production
+        // import.meta.env.MODE is 'development' or 'production'
+        // Check for dev mode using Vite's environment variables
+        let isDev = false;
+        try {
+          // Access Vite's env through type assertion
+          const env = (import.meta as { env?: { DEV?: boolean; MODE?: string } }).env;
+          isDev = env?.DEV === true || env?.MODE === 'development';
+        } catch {
+          // Fallback: assume production if env is not available
+          isDev = false;
+        }
+        runtimeEnvElement.textContent = isDev ? 'Development' : 'Release';
+      }
+
       // Load configuration data
       const config: config = await invoke('get_full_config');
       updateConfigDisplay(config);
