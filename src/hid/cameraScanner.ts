@@ -1,16 +1,24 @@
-import { BrowserMultiFormatReader } from '@zxing/library';
+/**
+ * Camera Scanner Module
+ *
+ * This module provides camera-based barcode scanning using a sidecar HTTP service.
+ * The sidecar handles direct camera access on the Raspberry Pi, avoiding browser
+ * camera permission issues in Tauri/WebKitGTK.
+ */
+
+import { checkSidecarHealth, scanBarcodeViaSidecar } from '../cameraSidecarClient';
 
 let scanning = false;
-let cameraStream: MediaStream | null = null;
-let barcodeReader: BrowserMultiFormatReader | null = null;
-let videoElement: HTMLVideoElement | null = null;
 let scanInterval: number | null = null;
-let currentDeviceId: string | null = null;
 let lastScannedCode: string | null = null;
 let lastScanTime: number = 0;
 const SCAN_COOLDOWN = 1000; // Prevent duplicate scans within 1 second
+const SCAN_INTERVAL_MS = 2000; // Poll the sidecar every 2 seconds when scanning
 
-// Initialize camera system and start scanning using browser APIs
+/**
+ * Initialize camera scanner and start scanning using the sidecar service
+ * @returns true if the scanner started successfully, false otherwise
+ */
 export async function startCameraScanner(): Promise<boolean> {
   if (scanning) {
     console.log('Camera scanner already running');
@@ -18,21 +26,21 @@ export async function startCameraScanner(): Promise<boolean> {
   }
 
   try {
-    console.log('Initializing camera system using browser APIs...');
+    console.log('Initializing camera scanner using sidecar service...');
 
-    // Check if browser supports mediaDevices API
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      console.error('Browser does not support getUserMedia API');
+    // Check if sidecar is healthy
+    const healthy = await checkSidecarHealth();
+    if (!healthy) {
+      console.error(
+        'Camera sidecar is not reachable. Is the service running? ' +
+        'Please start the camera sidecar service (python3 sidecar/camera_sidecar.py)'
+      );
       return false;
     }
 
-    // Set up video element for barcode scanning using getUserMedia
-    await setupVideoElement();
+    console.log('Camera sidecar is healthy, starting continuous scanning...');
 
-    // Initialize ZXing barcode reader
-    barcodeReader = new BrowserMultiFormatReader();
-
-    // Start scanning for barcodes
+    // Start polling the sidecar for barcodes
     startBarcodeScanning();
 
     scanning = true;
@@ -47,214 +55,32 @@ export async function startCameraScanner(): Promise<boolean> {
   }
 }
 
-// Set up video element to display camera feed and scan for barcodes
-async function setupVideoElement(): Promise<void> {
-  // Create or get video element
-  if (!videoElement) {
-    videoElement = document.createElement('video');
-    videoElement.style.position = 'fixed';
-    videoElement.style.top = '0';
-    videoElement.style.left = '0';
-    videoElement.style.width = '1px';
-    videoElement.style.height = '1px';
-    videoElement.style.opacity = '0';
-    videoElement.style.pointerEvents = 'none';
-    videoElement.autoplay = true;
-    videoElement.playsInline = true;
-    videoElement.muted = true;
-    document.body.appendChild(videoElement);
-  }
-
-  // Try to get user media stream
-  try {
-    // Check if we can query permissions (not all browsers support this)
-    let permissionStatus: PermissionStatus | null = null;
-    try {
-      permissionStatus = await navigator.permissions.query({ name: 'camera' as PermissionName });
-      console.log('Camera permission status:', permissionStatus.state);
-
-      if (permissionStatus.state === 'denied') {
-        throw new Error(
-          'Camera access has been denied. Please grant camera permissions in your system settings or browser preferences.'
-        );
-      }
-    } catch (permQueryError) {
-      // Permission query API not supported, continue with getUserMedia request
-      console.debug('Permission query API not available, proceeding with getUserMedia:', permQueryError);
-    }
-
-    // Build constraints - start with basic request to trigger permission prompt
-    let constraints: MediaStreamConstraints = {
-      video: {
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-      },
-    };
-
-    // Try to enumerate devices first (may not have labels without permission)
-    let devices: MediaDeviceInfo[] = [];
-    try {
-      devices = await navigator.mediaDevices.enumerateDevices();
-    } catch (enumError) {
-      console.debug('Could not enumerate devices before permission:', enumError);
-    }
-
-    const videoDevices = devices.filter(
-      (device) => device.kind === 'videoinput'
-    );
-
-    // If we have device info and a preferred device, use it
-    if (currentDeviceId && videoDevices.length > 0) {
-      const deviceId = currentDeviceId; // TypeScript type narrowing
-      const matchingDevice = videoDevices.find(
-        (d) => d.deviceId === deviceId || d.deviceId.includes(deviceId)
-      );
-      if (matchingDevice) {
-        constraints = {
-          video: {
-            deviceId: { exact: matchingDevice.deviceId },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          },
-        };
-        console.log(`Attempting to use device: ${matchingDevice.label || matchingDevice.deviceId}`);
-      } else if (videoDevices.length > 0) {
-        constraints = {
-          video: {
-            deviceId: { exact: videoDevices[0].deviceId },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          },
-        };
-        currentDeviceId = videoDevices[0].deviceId;
-        console.log(`Attempting to use device: ${videoDevices[0].label || videoDevices[0].deviceId}`);
-      }
-    }
-
-    // Request camera access with the constraints
-    try {
-      cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
-
-      // After getting permission, enumerate again to get device labels
-      try {
-        const devicesAfterPermission = await navigator.mediaDevices.enumerateDevices();
-        const videoDevicesAfter = devicesAfterPermission.filter(
-          (device) => device.kind === 'videoinput'
-        );
-
-        if (videoDevicesAfter.length > 0) {
-          console.log(
-            `Found ${videoDevicesAfter.length} video device(s):`,
-            videoDevicesAfter.map((d) => ({ id: d.deviceId, label: d.label || 'Unknown' }))
-          );
-
-          // Update currentDeviceId with the actual device being used
-          const activeTrack = cameraStream.getVideoTracks()[0];
-          if (activeTrack) {
-            const settings = activeTrack.getSettings();
-            if (settings.deviceId) {
-              currentDeviceId = settings.deviceId;
-              const deviceInfo = videoDevicesAfter.find(d => d.deviceId === settings.deviceId);
-              if (deviceInfo) {
-                console.log(`Using camera: ${deviceInfo.label || deviceInfo.deviceId}`);
-              }
-            }
-          }
-        }
-      } catch (enumError) {
-        console.debug('Could not enumerate devices after permission:', enumError);
-      }
-    } catch (getUserMediaError) {
-      // If we can't get permission, throw a helpful error
-      const error = getUserMediaError as DOMException;
-      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-        throw new Error(
-          'Camera access denied. Please grant camera permissions to use the barcode scanner. ' +
-          'You may need to check your system settings or browser preferences.'
-        );
-      } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
-        throw new Error('No camera device found. Please connect a camera and try again.');
-      } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
-        throw new Error(
-          'Camera is already in use by another application. Please close other applications using the camera and try again.'
-        );
-      } else {
-        throw new Error(`Failed to access camera: ${error.message || error.name}`);
-      }
-    }
-
-    // Set up the video element with the stream
-    videoElement.srcObject = cameraStream;
-    await videoElement.play();
-
-    console.log('Video element set up successfully');
-  } catch (error) {
-    console.error('Failed to set up video element:', error);
-
-    // Clean up on error
-    if (cameraStream) {
-      cameraStream.getTracks().forEach((track) => track.stop());
-      cameraStream = null;
-    }
-
-    throw error;
-  }
-}
-
-// Cleanup function
-async function cleanup(): Promise<void> {
+/**
+ * Start polling the sidecar service for barcodes
+ */
+function startBarcodeScanning(): void {
   if (scanInterval) {
     clearInterval(scanInterval);
-    scanInterval = null;
   }
 
-  if (cameraStream) {
-    cameraStream.getTracks().forEach((track) => track.stop());
-    cameraStream = null;
-  }
-
-  if (videoElement) {
-    videoElement.srcObject = null;
-    videoElement.remove();
-    videoElement = null;
-  }
-
-  if (barcodeReader) {
-    barcodeReader.reset();
-    barcodeReader = null;
-  }
-}
-
-// Start scanning for barcodes in video frames
-function startBarcodeScanning(): void {
-  if (!videoElement || !barcodeReader) {
-    console.error('Video element or barcode reader not initialized');
-    return;
-  }
-
-  // Scan every 300ms to balance between responsiveness and CPU usage
+  // Poll the sidecar periodically
   scanInterval = window.setInterval(async () => {
-    if (!videoElement || !barcodeReader || !scanning) {
+    if (!scanning) {
       return;
     }
 
-    // Check if video has enough data
-    if (videoElement.readyState !== videoElement.HAVE_ENOUGH_DATA) {
-      return;
-    }
-
-    // Check cooldown period
+    // Check cooldown period to prevent duplicate scans
     const now = Date.now();
     if (now - lastScanTime < SCAN_COOLDOWN) {
       return;
     }
 
     try {
-      // Decode barcode from video frame
-      const result = await barcodeReader.decodeFromVideoElement(videoElement);
+      // Request a scan from the sidecar
+      const result = await scanBarcodeViaSidecar(1500); // Use shorter timeout for polling
 
-      const barcodeText = result?.getText();
-      if (barcodeText) {
+      if (result.success && result.code) {
+        const barcodeText = result.code;
         console.log('Barcode detected:', barcodeText);
 
         // Parse barcode format ^1234567^ to extract OneCard number
@@ -287,23 +113,27 @@ function startBarcodeScanning(): void {
           console.warn('Barcode format not recognized:', barcodeText);
         }
       }
+      // If no barcode found, silently continue (this is expected)
     } catch (error) {
-      // Ignore decode errors (no barcode found in frame)
-      // NotFoundException is expected when no barcode is present
-      if (error && typeof error === 'object' && 'name' in error) {
-        const errorName = (error as { name?: string }).name;
-        if (
-          errorName !== 'NotFoundException' &&
-          errorName !== 'No QR Code Found'
-        ) {
-          console.debug('Barcode scan error:', error);
-        }
-      }
+      // Log errors but don't stop scanning
+      console.debug('Barcode scan error:', error);
     }
-  }, 300);
+  }, SCAN_INTERVAL_MS);
 }
 
-// Stop camera-based barcode scanning
+/**
+ * Cleanup function
+ */
+async function cleanup(): Promise<void> {
+  if (scanInterval) {
+    clearInterval(scanInterval);
+    scanInterval = null;
+  }
+}
+
+/**
+ * Stop camera-based barcode scanning
+ */
 export async function stopCameraScanner(): Promise<void> {
   if (!scanning) {
     return;
@@ -312,11 +142,10 @@ export async function stopCameraScanner(): Promise<void> {
   try {
     scanning = false;
 
-    // Cleanup all resources (browser API handles stopping the stream)
+    // Cleanup polling interval
     await cleanup();
 
     // Reset state
-    currentDeviceId = null;
     lastScannedCode = null;
     lastScanTime = 0;
 
@@ -326,7 +155,44 @@ export async function stopCameraScanner(): Promise<void> {
   }
 }
 
-// Check if camera scanner is running
+/**
+ * Check if camera scanner is running
+ * @returns true if the scanner is active, false otherwise
+ */
 export async function isCameraScannerRunning(): Promise<boolean> {
   return scanning;
+}
+
+/**
+ * Perform a one-shot barcode scan using the camera sidecar
+ * This can be called on-demand (e.g., from a UI button)
+ * @param timeoutMs Maximum time to spend scanning in milliseconds (default: 5000)
+ * @returns The scanned barcode code, or throws an error if scan fails
+ */
+export async function scanBarcodeFromCamera(timeoutMs = 5000): Promise<string> {
+  // Ensure sidecar is healthy
+  const healthy = await checkSidecarHealth();
+  if (!healthy) {
+    throw new Error(
+      'Camera sidecar unavailable. Is the service running? ' +
+      'Please start the camera sidecar service (python3 sidecar/camera_sidecar.py)'
+    );
+  }
+
+  const result = await scanBarcodeViaSidecar(timeoutMs);
+
+  if (!result.success || !result.code) {
+    throw new Error(result.error || 'No barcode detected');
+  }
+
+  // Parse barcode format ^1234567^ to extract OneCard number
+  const barcodeText = result.code;
+  const onecardMatch = barcodeText.match(/^\^(\d+)\^$/);
+
+  if (onecardMatch) {
+    return onecardMatch[1];
+  }
+
+  // If format doesn't match, return the raw code
+  return barcodeText;
 }
