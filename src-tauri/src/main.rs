@@ -12,6 +12,8 @@ use devices::magtek::{listen_to_magtek, open_magtek_reader};
 use hid::manager::{HIDManager, DeviceConnectionState};
 use tauri::WebviewWindow;
 use tauri::Manager;
+use tauri::Listener;
+use tauri_plugin_shell::ShellExt;
 
 use api::entries::{submit_entry, CardData};
 use std::sync::Mutex;
@@ -375,7 +377,7 @@ async fn stop_camera_sidecar(
 ) -> Result<(), String> {
     let mut proc_guard = scanner.0.lock().map_err(|e| format!("Failed to lock scanner state: {}", e))?;
 
-    if let Some(mut child) = proc_guard.take() {
+    if let Some(child) = proc_guard.take() {
         log::info!("Stopping camera sidecar...");
         child.kill().map_err(|e| format!("Failed to kill camera sidecar: {}", e))?;
         log::info!("Camera sidecar stopped");
@@ -486,7 +488,7 @@ fn main() {
             app.handle().listen("tauri://close-requested", move |_| {
                 log::info!("App closing, stopping camera sidecar...");
                 if let Ok(mut proc_guard) = scanner_proc.0.lock() {
-                    if let Some(mut child) = proc_guard.take() {
+                    if let Some(child) = proc_guard.take() {
                         if let Err(e) = child.kill() {
                             log::error!("Failed to kill camera sidecar on exit: {}", e);
                         } else {
