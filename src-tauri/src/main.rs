@@ -14,6 +14,8 @@ use tauri::WebviewWindow;
 use tauri::Manager;
 
 use api::entries::{submit_entry, CardData};
+use std::sync::Mutex;
+use tauri_plugin_shell::process::CommandChild;
 
 #[tauri::command]
 fn get_hid_devices() -> Vec<String> {
@@ -335,6 +337,55 @@ fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+// Sidecar process state holder
+struct ScannerProc(Mutex<Option<CommandChild>>);
+
+#[tauri::command]
+async fn start_camera_sidecar(
+    app: tauri::AppHandle,
+    scanner: tauri::State<'_, ScannerProc>,
+) -> Result<(), String> {
+    let mut proc_guard = scanner.0.lock().map_err(|e| format!("Failed to lock scanner state: {}", e))?;
+
+    // If already running, return Ok
+    if proc_guard.is_some() {
+        log::info!("Camera sidecar is already running");
+        return Ok(());
+    }
+
+    log::info!("Starting camera sidecar...");
+
+    // Spawn the sidecar process
+    let child = app
+        .shell()
+        .sidecar("camera-scanner")
+        .map_err(|e| format!("Failed to create sidecar command: {}", e))?
+        .spawn()
+        .map_err(|e| format!("Failed to spawn camera sidecar: {}", e))?;
+
+    *proc_guard = Some(child);
+    log::info!("Camera sidecar started successfully");
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn stop_camera_sidecar(
+    scanner: tauri::State<'_, ScannerProc>,
+) -> Result<(), String> {
+    let mut proc_guard = scanner.0.lock().map_err(|e| format!("Failed to lock scanner state: {}", e))?;
+
+    if let Some(mut child) = proc_guard.take() {
+        log::info!("Stopping camera sidecar...");
+        child.kill().map_err(|e| format!("Failed to kill camera sidecar: {}", e))?;
+        log::info!("Camera sidecar stopped");
+    } else {
+        log::info!("Camera sidecar was not running");
+    }
+
+    Ok(())
+}
+
 fn main() {
     // Set WebKitGTK compositing mode to disabled on Linux to prevent image artifacting
     #[cfg(target_os = "linux")]
@@ -374,9 +425,14 @@ fn main() {
     // Initialize HID manager
     let hid_manager = HIDManager::new();
 
+    // Initialize scanner process state
+    let scanner_proc = ScannerProc(Mutex::new(None));
+
     // Build the Tauri builder with conditional devtools plugin
     let builder = {
-        let mut b = tauri::Builder::default().plugin(tauri_plugin_http::init());
+        let mut b = tauri::Builder::default()
+            .plugin(tauri_plugin_http::init())
+            .plugin(tauri_plugin_shell::init());
         #[cfg(debug_assertions)] // only enable instrumentation in development builds
         {
             b = b.plugin(tauri_plugin_devtools::init());
@@ -387,6 +443,7 @@ fn main() {
         .plugin(crabcamera::init())
         .manage(config_manager)
         .manage(hid_manager)
+        .manage(scanner_proc)
         .invoke_handler(tauri::generate_handler![
             get_hid_devices,
             start_barcode_listener,
@@ -407,6 +464,8 @@ fn main() {
             submit_barcode_entry,
             submit_manual_entry,
             get_app_version,
+            start_camera_sidecar,
+            stop_camera_sidecar,
         ])
         .setup(|app| {
             // Get the main window and HID manager
@@ -420,6 +479,22 @@ fn main() {
             if let Err(e) = hid_manager.start_initial_connection() {
                 log::error!("Failed to start HID device monitoring: {}", e);
             }
+
+            // Cleanup scanner sidecar on app exit
+            let app_handle = app.handle().clone();
+            let scanner_proc = app.state::<ScannerProc>();
+            app.handle().listen("tauri://close-requested", move |_| {
+                log::info!("App closing, stopping camera sidecar...");
+                if let Ok(mut proc_guard) = scanner_proc.0.lock() {
+                    if let Some(mut child) = proc_guard.take() {
+                        if let Err(e) = child.kill() {
+                            log::error!("Failed to kill camera sidecar on exit: {}", e);
+                        } else {
+                            log::info!("Camera sidecar stopped on app exit");
+                        }
+                    }
+                }
+            });
 
             Ok(())
         })

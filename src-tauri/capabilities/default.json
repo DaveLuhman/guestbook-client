@@ -8,6 +8,15 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "http:default"
+    "http:default",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "binaries/camera-scanner",
+          "sidecar": true
+        }
+      ]
+    }
   ]
 }

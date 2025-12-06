@@ -15,6 +15,8 @@ For systemd service, see sidecar/camera_sidecar.service.example
 
 import time
 import threading
+import gc
+import sys
 from datetime import datetime, timezone
 from flask import Flask, jsonify, request
 from threading import Thread, Lock
@@ -32,6 +34,8 @@ CAPTURE_FPS = 14  # Target capture rate (~14 FPS)
 CAPTURE_INTERVAL = 1.0 / CAPTURE_FPS  # ~0.07 seconds between captures
 DECODE_INTERVAL = 0.02  # Reduced delay to process frames faster (~50 FPS decode rate)
 DECODE_SKIP_FRAMES = 2  # Only decode every Nth frame to keep up with capture rate
+GC_COLLECT_INTERVAL = 1000  # Force garbage collection every N decode iterations (~20 seconds)
+MEMORY_MONITOR_INTERVAL = 500  # Log memory usage every N decode iterations (~10 seconds)
 
 # Shared state
 picam2 = None
@@ -100,7 +104,11 @@ def camera_capture_loop():
                 frame = pic.capture_array()
                 frame_count += 1
                 with frame_lock:
+                    # Replace old frame reference (let GC clean it up)
+                    old_frame = latest_frame
                     latest_frame = frame
+                    # Explicitly delete old frame reference to help GC
+                    del old_frame
 
                 # Log every 50 frames (~3.5 seconds at 14fps)
                 if frame_count % 50 == 0:
@@ -168,17 +176,30 @@ def barcode_decode_loop():
 
                 # Try preprocessing approaches in order of speed/effectiveness
                 # Start with fastest methods first, only try slower ones if needed
-                processed_images = [
-                    ("grayscale", gray),  # Fastest and most effective
-                    ("grayscale_threshold", cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]),  # Good for blurry images
-                    ("grayscale_contrast", cv2.convertScaleAbs(gray, alpha=1.5, beta=30)),  # Increase contrast
-                ]
-
                 barcodes = []
-                for method_name, processed_img in processed_images:
-                    try:
-                        # Try decoding with all barcode types enabled
-                        detected = decode_barcodes(processed_img, symbols=[
+                threshold_img = None
+                contrast_img = None
+
+                try:
+                    # Try grayscale first (fastest)
+                    detected = decode_barcodes(gray, symbols=[
+                        ZBarSymbol.CODE128,
+                        ZBarSymbol.CODE39,
+                        ZBarSymbol.EAN13,
+                        ZBarSymbol.EAN8,
+                        ZBarSymbol.UPCA,
+                        ZBarSymbol.UPCE,
+                        ZBarSymbol.I25,
+                        ZBarSymbol.CODABAR,
+                    ])
+                    if detected:
+                        barcodes.extend(detected)
+                        if decode_count % 50 == 0:
+                            print(f"[DECODE] Found {len(detected)} barcode(s) using grayscale")
+                    else:
+                        # Try threshold if grayscale didn't work
+                        _, threshold_img = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                        detected = decode_barcodes(threshold_img, symbols=[
                             ZBarSymbol.CODE128,
                             ZBarSymbol.CODE39,
                             ZBarSymbol.EAN13,
@@ -191,13 +212,37 @@ def barcode_decode_loop():
                         if detected:
                             barcodes.extend(detected)
                             if decode_count % 50 == 0:
-                                print(f"[DECODE] Found {len(detected)} barcode(s) using {method_name}")
-                            # If we found barcodes, we can stop trying other methods
-                            break
-                    except Exception as e:
-                        if decode_count % 50 == 0:
-                            print(f"[DECODE] Error with {method_name}: {e}")
-                        continue
+                                print(f"[DECODE] Found {len(detected)} barcode(s) using threshold")
+                        else:
+                            # Try contrast enhancement as last resort
+                            contrast_img = cv2.convertScaleAbs(gray, alpha=1.5, beta=30)
+                            detected = decode_barcodes(contrast_img, symbols=[
+                                ZBarSymbol.CODE128,
+                                ZBarSymbol.CODE39,
+                                ZBarSymbol.EAN13,
+                                ZBarSymbol.EAN8,
+                                ZBarSymbol.UPCA,
+                                ZBarSymbol.UPCE,
+                                ZBarSymbol.I25,
+                                ZBarSymbol.CODABAR,
+                            ])
+                            if detected:
+                                barcodes.extend(detected)
+                                if decode_count % 50 == 0:
+                                    print(f"[DECODE] Found {len(detected)} barcode(s) using contrast")
+                except Exception as e:
+                    if decode_count % 50 == 0:
+                        print(f"[DECODE] Error during decode: {e}")
+                finally:
+                    # Explicitly clean up intermediate arrays to help GC
+                    del bgr
+                    del gray
+                    if threshold_img is not None:
+                        del threshold_img
+                    if contrast_img is not None:
+                        del contrast_img
+                    # Clean up frame copy after processing
+                    del frame
 
                 # Remove duplicates (same code detected multiple times)
                 seen_codes = set()
@@ -211,14 +256,31 @@ def barcode_decode_loop():
                     except:
                         pass
                 barcodes = unique_barcodes
-                
+
                 # Debug: log frame processing every 50 decodes (~2.5 seconds)
                 if decode_count % 50 == 0:
                     print(f"[DECODE] Processed {decode_count} frames, current frame: {len(barcodes)} barcode(s)")
-                    # Save a sample frame for debugging
-                    if decode_count == 50:
-                        cv2.imwrite('/tmp/decode_sample_frame.jpg', bgr)
-                        print("[DECODE] Sample decode frame saved to /tmp/decode_sample_frame.jpg")
+
+                # Memory monitoring and garbage collection
+                if decode_count % MEMORY_MONITOR_INTERVAL == 0:
+                    import psutil
+                    import os
+                    try:
+                        process = psutil.Process(os.getpid())
+                        mem_info = process.memory_info()
+                        mem_mb = mem_info.rss / 1024 / 1024
+                        print(f"[MEMORY] RSS: {mem_mb:.1f} MB")
+                    except ImportError:
+                        # psutil not available, skip monitoring
+                        pass
+                    except Exception as e:
+                        print(f"[MEMORY] Error monitoring memory: {e}")
+
+                # Periodic garbage collection to free up numpy arrays
+                if decode_count % GC_COLLECT_INTERVAL == 0:
+                    collected = gc.collect()
+                    if collected > 0:
+                        print(f"[GC] Collected {collected} objects")
 
                 now = time.time() * 1000
 
@@ -352,6 +414,40 @@ def health():
             return jsonify({"status": "error", "error": "Camera not initialized"}), 500
     print(f"[HTTP] /health returning OK")
     return jsonify({"status": "ok"})
+
+
+@app.route('/debug/memory', methods=['GET'])
+def debug_memory():
+    """Debug endpoint to check memory usage"""
+    try:
+        import psutil
+        import os
+        process = psutil.Process(os.getpid())
+        mem_info = process.memory_info()
+
+        # Get GC stats
+        gc_stats = gc.get_stats()
+
+        return jsonify({
+            "success": True,
+            "memory": {
+                "rss_mb": round(mem_info.rss / 1024 / 1024, 2),
+                "vms_mb": round(mem_info.vms / 1024 / 1024, 2),
+                "percent": round(process.memory_percent(), 2),
+            },
+            "gc": {
+                "collections": gc_stats,
+                "threshold": gc.get_threshold(),
+            },
+            "threads": threading.active_count(),
+        })
+    except ImportError:
+        return jsonify({
+            "success": False,
+            "error": "psutil not installed. Install with: pip3 install psutil"
+        }), 500
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route('/next_scan', methods=['GET'])

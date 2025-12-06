@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Camera Scanner Sidecar Wrapper
+# This script starts the Python camera/barcode scanner service
+# It is invoked by Tauri as a sidecar process
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Calculate path to the Python script
+# In development: script is in src-tauri/binaries/, Python script is at ../sidecar/camera_sidecar.py
+# In bundled app: script is in <app>/binaries/, Python script should be at <app>/../sidecar/camera_sidecar.py
+# Or installed system-wide at /usr/share/guestbook-kiosk/sidecar/camera_sidecar.py
+
+APP_ROOT="$(dirname "$SCRIPT_DIR")"
+PYTHON_SCRIPT=""
+
+# Try development path first (relative to src-tauri/binaries/)
+if [ -f "$APP_ROOT/../sidecar/camera_sidecar.py" ]; then
+    PYTHON_SCRIPT="$APP_ROOT/../sidecar/camera_sidecar.py"
+# Try bundled app path (relative to app/binaries/)
+elif [ -f "$APP_ROOT/../../sidecar/camera_sidecar.py" ]; then
+    PYTHON_SCRIPT="$APP_ROOT/../../sidecar/camera_sidecar.py"
+# Try system installation path
+elif [ -f "/usr/share/guestbook-kiosk/sidecar/camera_sidecar.py" ]; then
+    PYTHON_SCRIPT="/usr/share/guestbook-kiosk/sidecar/camera_sidecar.py"
+else
+    echo "Error: Could not find camera_sidecar.py" >&2
+    echo "Tried:" >&2
+    echo "  $APP_ROOT/../sidecar/camera_sidecar.py" >&2
+    echo "  $APP_ROOT/../../sidecar/camera_sidecar.py" >&2
+    echo "  /usr/share/guestbook-kiosk/sidecar/camera_sidecar.py" >&2
+    exit 1
+fi
+
+# Execute the Python script with system python3
+exec python3 "$PYTHON_SCRIPT"

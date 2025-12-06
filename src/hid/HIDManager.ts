@@ -6,6 +6,7 @@ import { soundManager } from '../sound/soundManager';
 import { updateScanData } from './barcodeScanner';
 import { startCameraScanner } from './cameraScanner';
 import { type swipeData, updateSwipeData } from './magstripReader';
+import { checkSidecarHealth } from '../cameraSidecarClient';
 
 // Device status tracking
 interface DeviceStatus {
@@ -49,12 +50,15 @@ export async function startHIDManager() {
   // Set up device status monitoring
   setupDeviceStatusMonitoring();
 
+  // Set up camera status monitoring (checks /health endpoint)
+  setupCameraStatusMonitoring();
+
   // Start camera scanner (will fall back to HID scanner if camera fails)
   try {
     const cameraStarted = await startCameraScanner();
     if (cameraStarted) {
       console.log('Camera scanner started successfully');
-      updateDeviceStatusIndicator('camera', 'connected');
+      // Status will be updated by setupCameraStatusMonitoring
     } else {
       console.warn(
         'Camera scanner failed to start, will use HID scanner as fallback'
@@ -245,6 +249,35 @@ function setupDeviceStatusMonitoring() {
 
   // Periodically check device status (every 15 seconds)
   setInterval(checkDeviceStatus, 15000);
+}
+
+// Set up camera status monitoring using /health endpoint
+function setupCameraStatusMonitoring() {
+  // Check camera health immediately
+  checkCameraHealth();
+
+  // Periodically check camera health (every 5 seconds)
+  setInterval(checkCameraHealth, 5000);
+}
+
+// Check camera sidecar health via /health endpoint
+async function checkCameraHealth() {
+  try {
+    const health = await checkSidecarHealth();
+    if (health.ok) {
+      updateDeviceStatusIndicator('camera', 'connected');
+    } else {
+      const errorMsg = health.error || 'Camera sidecar not responding';
+      updateDeviceStatusIndicator('camera', 'error', errorMsg);
+    }
+  } catch (error) {
+    console.error('Failed to check camera health:', error);
+    updateDeviceStatusIndicator(
+      'camera',
+      'error',
+      error instanceof Error ? error.message : 'Failed to check camera status'
+    );
+  }
 }
 
 // Update device status display in the UI

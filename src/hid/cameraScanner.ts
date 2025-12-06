@@ -10,6 +10,7 @@
  */
 
 import { checkSidecarHealth, startScanStream, type ScanEvent } from '../cameraSidecarClient';
+import { ensureScannerRunning } from '../lib/scanner';
 
 let scanning = false;
 let stopStream: (() => void) | null = null;
@@ -32,12 +33,24 @@ export async function startCameraScanner(): Promise<boolean> {
   try {
     console.log('Initializing camera scanner using sidecar service...');
 
+    // Start the sidecar process via Tauri
+    try {
+      await ensureScannerRunning();
+      console.log('Camera sidecar process started');
+    } catch (error) {
+      console.error('Failed to start camera sidecar process:', error);
+      return false;
+    }
+
+    // Wait a moment for the sidecar to start up
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
     // Check if sidecar is healthy
     const health = await checkSidecarHealth();
     if (!health.ok) {
       console.error(
-        'Camera sidecar is not reachable. Is the service running? ' +
-        'Please start the camera sidecar service (python3 sidecar/camera_sidecar.py)'
+        'Camera sidecar is not reachable after startup. ' +
+        'The process may have failed to start or is still initializing.'
       );
       if (health.error) {
         console.error('Sidecar error:', health.error);

@@ -30,7 +30,7 @@
     "security": {
       "csp": {
         "default-src": "'self' customprotocol: asset:",
-        "connect-src": "ipc: http://ipc.localhost",
+        "connect-src": "ipc: http://ipc.localhost http://127.0.0.1:7313",
         "font-src": [
           "https://fonts.gstatic.com"
         ],
@@ -57,6 +57,9 @@
     "resources": [
       "../public/firstRun.html",
       "../public/styles.css"
+    ],
+    "externalBin": [
+      "binaries/camera-scanner"
     ],
     "linux": {
       "deb": {
