@@ -487,7 +487,7 @@ fn main() {
             let app_handle = app.handle().clone();
             app_handle.listen("tauri://close-requested", move |_| {
                 log::info!("App closing, stopping camera sidecar...");
-                if let Ok(scanner_proc) = app_handle.try_state::<ScannerProc>() {
+                if let Some(scanner_proc) = app_handle.try_state::<ScannerProc>() {
                     if let Ok(mut proc_guard) = scanner_proc.0.lock() {
                         if let Some(child) = proc_guard.take() {
                             if let Err(e) = child.kill() {
