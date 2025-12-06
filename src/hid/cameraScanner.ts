@@ -67,37 +67,45 @@ async function setupVideoElement(): Promise<void> {
 
   // Try to get user media stream
   try {
-    // Request permission first (some browsers require this before enumerateDevices returns labels)
-    // We'll use a temporary stream to get permission, then enumerate devices
-    let tempStream: MediaStream | null = null;
+    // Check if we can query permissions (not all browsers support this)
+    let permissionStatus: PermissionStatus | null = null;
     try {
-      tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
-      // Stop the temporary stream after getting permission
-      tempStream.getTracks().forEach((track) => track.stop());
-    } catch (permError) {
-      console.warn('Permission request failed, trying without device selection:', permError);
+      permissionStatus = await navigator.permissions.query({ name: 'camera' as PermissionName });
+      console.log('Camera permission status:', permissionStatus.state);
+
+      if (permissionStatus.state === 'denied') {
+        throw new Error(
+          'Camera access has been denied. Please grant camera permissions in your system settings or browser preferences.'
+        );
+      }
+    } catch (permQueryError) {
+      // Permission query API not supported, continue with getUserMedia request
+      console.debug('Permission query API not available, proceeding with getUserMedia:', permQueryError);
     }
 
-    // Get available video devices
-    const devices = await navigator.mediaDevices.enumerateDevices();
+    // Build constraints - start with basic request to trigger permission prompt
+    let constraints: MediaStreamConstraints = {
+      video: {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+    };
+
+    // Try to enumerate devices first (may not have labels without permission)
+    let devices: MediaDeviceInfo[] = [];
+    try {
+      devices = await navigator.mediaDevices.enumerateDevices();
+    } catch (enumError) {
+      console.debug('Could not enumerate devices before permission:', enumError);
+    }
+
     const videoDevices = devices.filter(
       (device) => device.kind === 'videoinput'
     );
 
-    if (videoDevices.length === 0) {
-      throw new Error('No video input devices found');
-    }
-
-    console.log(
-      `Found ${videoDevices.length} video device(s):`,
-      videoDevices.map((d) => ({ id: d.deviceId, label: d.label || 'Unknown' }))
-    );
-
-    // Try to match device ID or use first available
-    let constraints: MediaStreamConstraints;
+    // If we have device info and a preferred device, use it
     if (currentDeviceId && videoDevices.length > 0) {
-      // Try to find matching device
-      const deviceId = currentDeviceId;
+      const deviceId = currentDeviceId; // TypeScript type narrowing
       const matchingDevice = videoDevices.find(
         (d) => d.deviceId === deviceId || d.deviceId.includes(deviceId)
       );
@@ -109,9 +117,8 @@ async function setupVideoElement(): Promise<void> {
             height: { ideal: 720 },
           },
         };
-        console.log(`Using matched device: ${matchingDevice.label || matchingDevice.deviceId}`);
-      } else {
-        // Use first available device
+        console.log(`Attempting to use device: ${matchingDevice.label || matchingDevice.deviceId}`);
+      } else if (videoDevices.length > 0) {
         constraints = {
           video: {
             deviceId: { exact: videoDevices[0].deviceId },
@@ -119,34 +126,77 @@ async function setupVideoElement(): Promise<void> {
             height: { ideal: 720 },
           },
         };
-        console.log(`Using first available device: ${videoDevices[0].label || videoDevices[0].deviceId}`);
-      }
-    } else {
-      // Fallback: use any available camera
-      constraints = {
-        video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-      };
-      console.log('Using default camera');
-    }
-
-    // Store the device ID for later use
-    if (constraints.video && typeof constraints.video === 'object' && 'deviceId' in constraints.video) {
-      const deviceIdObj = constraints.video.deviceId as { exact?: string };
-      if (deviceIdObj.exact) {
-        currentDeviceId = deviceIdObj.exact;
+        currentDeviceId = videoDevices[0].deviceId;
+        console.log(`Attempting to use device: ${videoDevices[0].label || videoDevices[0].deviceId}`);
       }
     }
 
-    cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+    // Request camera access with the constraints
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+
+      // After getting permission, enumerate again to get device labels
+      try {
+        const devicesAfterPermission = await navigator.mediaDevices.enumerateDevices();
+        const videoDevicesAfter = devicesAfterPermission.filter(
+          (device) => device.kind === 'videoinput'
+        );
+
+        if (videoDevicesAfter.length > 0) {
+          console.log(
+            `Found ${videoDevicesAfter.length} video device(s):`,
+            videoDevicesAfter.map((d) => ({ id: d.deviceId, label: d.label || 'Unknown' }))
+          );
+
+          // Update currentDeviceId with the actual device being used
+          const activeTrack = cameraStream.getVideoTracks()[0];
+          if (activeTrack) {
+            const settings = activeTrack.getSettings();
+            if (settings.deviceId) {
+              currentDeviceId = settings.deviceId;
+              const deviceInfo = videoDevicesAfter.find(d => d.deviceId === settings.deviceId);
+              if (deviceInfo) {
+                console.log(`Using camera: ${deviceInfo.label || deviceInfo.deviceId}`);
+              }
+            }
+          }
+        }
+      } catch (enumError) {
+        console.debug('Could not enumerate devices after permission:', enumError);
+      }
+    } catch (getUserMediaError) {
+      // If we can't get permission, throw a helpful error
+      const error = getUserMediaError as DOMException;
+      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+        throw new Error(
+          'Camera access denied. Please grant camera permissions to use the barcode scanner. ' +
+          'You may need to check your system settings or browser preferences.'
+        );
+      } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+        throw new Error('No camera device found. Please connect a camera and try again.');
+      } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+        throw new Error(
+          'Camera is already in use by another application. Please close other applications using the camera and try again.'
+        );
+      } else {
+        throw new Error(`Failed to access camera: ${error.message || error.name}`);
+      }
+    }
+
+    // Set up the video element with the stream
     videoElement.srcObject = cameraStream;
     await videoElement.play();
 
     console.log('Video element set up successfully');
   } catch (error) {
     console.error('Failed to set up video element:', error);
+
+    // Clean up on error
+    if (cameraStream) {
+      cameraStream.getTracks().forEach((track) => track.stop());
+      cameraStream = null;
+    }
+
     throw error;
   }
 }
