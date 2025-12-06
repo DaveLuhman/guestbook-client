@@ -30,7 +30,8 @@ NEXT_SCAN_TIMEOUT = 8.0  # Long-poll timeout in seconds
 DEBOUNCE_MS = 800  # Ignore duplicate scans within this window (ms)
 CAPTURE_FPS = 14  # Target capture rate (~14 FPS)
 CAPTURE_INTERVAL = 1.0 / CAPTURE_FPS  # ~0.07 seconds between captures
-DECODE_INTERVAL = 0.05  # Small delay in decode loop to avoid pegging CPU
+DECODE_INTERVAL = 0.02  # Reduced delay to process frames faster (~50 FPS decode rate)
+DECODE_SKIP_FRAMES = 2  # Only decode every Nth frame to keep up with capture rate
 
 # Shared state
 picam2 = None
@@ -141,6 +142,7 @@ def barcode_decode_loop():
     last_time = 0.0
 
     decode_count = 0
+    frame_skip_counter = 0
     while running:
         try:
             frame = None
@@ -149,6 +151,13 @@ def barcode_decode_loop():
                     frame = latest_frame.copy()
 
             if frame is not None:
+                # Skip frames to keep up with capture rate
+                frame_skip_counter += 1
+                if frame_skip_counter < DECODE_SKIP_FRAMES:
+                    time.sleep(DECODE_INTERVAL)
+                    continue
+                frame_skip_counter = 0
+
                 decode_count += 1
                 # Picamera2 gives RGB, OpenCV/pyzbar likes BGR
                 bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
@@ -157,13 +166,12 @@ def barcode_decode_loop():
                 # Convert to grayscale (pyzbar works better on grayscale)
                 gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
 
-                # Try multiple preprocessing approaches
+                # Try preprocessing approaches in order of speed/effectiveness
+                # Start with fastest methods first, only try slower ones if needed
                 processed_images = [
-                    ("original_bgr", bgr),
-                    ("grayscale", gray),
+                    ("grayscale", gray),  # Fastest and most effective
+                    ("grayscale_threshold", cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]),  # Good for blurry images
                     ("grayscale_contrast", cv2.convertScaleAbs(gray, alpha=1.5, beta=30)),  # Increase contrast
-                    ("grayscale_sharpened", cv2.filter2D(gray, -1, np.array([[-1,-1,-1],[-1,9,-1],[-1,-1,-1]]))),  # Sharpen
-                    ("grayscale_threshold", cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]),  # Adaptive threshold
                 ]
 
                 barcodes = []
