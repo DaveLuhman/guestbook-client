@@ -2,8 +2,8 @@
 """
 Camera Sidecar Service for Raspberry Pi Camera Barcode Scanning
 
-This service continuously captures frames from the Pi Camera and decodes barcodes,
-streaming new scans to clients via long-polling HTTP endpoints.
+This service continuously captures frames from the Pi Camera using libcamera (Picamera2)
+and decodes barcodes, streaming new scans to clients via long-polling HTTP endpoints.
 
 Usage:
     python3 sidecar/camera_sidecar.py
@@ -13,164 +13,122 @@ The service will start on http://127.0.0.1:7313
 For systemd service, see sidecar/camera_sidecar.service.example
 """
 
-import cv2
-import json
 import time
 import threading
 from datetime import datetime, timezone
 from flask import Flask, jsonify, request
-from pyzbar import pyzbar
+from threading import Thread, Lock
+from picamera2 import Picamera2
+import cv2
+from pyzbar.pyzbar import decode as decode_barcodes
 
 app = Flask(__name__)
 
 # Configuration
-# Try different camera device paths for Pi Camera
-CAMERA_DEVICES = ['/dev/video0', '/dev/video1', 0]  # Try V4L2 paths first, then index
-DEFAULT_RESOLUTION = (1280, 720)
-FRAME_CAPTURE_INTERVAL = 0.1  # ~10 FPS (100ms between frames)
 NEXT_SCAN_TIMEOUT = 8.0  # Long-poll timeout in seconds
 DEBOUNCE_MS = 800  # Ignore duplicate scans within this window (ms)
-CAMERA_WARMUP_FRAMES = 5  # Read a few frames to initialize camera before scanning
+CAPTURE_FPS = 14  # Target capture rate (~14 FPS)
+CAPTURE_INTERVAL = 1.0 / CAPTURE_FPS  # ~0.07 seconds between captures
+DECODE_INTERVAL = 0.05  # Small delay in decode loop to avoid pegging CPU
 
-# Shared state for scan queue
-scan_lock = threading.Lock()
+# Shared state
+picam2 = None
+latest_frame = None
+frame_lock = Lock()
 latest_scan_id = 0
 latest_scan = None
+scan_lock = Lock()
 camera_error = None
-
-# Camera capture thread control
-camera_thread = None
-camera_running = False
-camera_cap = None
+running = True
 
 
-def open_camera():
+def camera_capture_loop():
     """
-    Try to open the camera using V4L2 backend.
-    Attempts multiple device paths/indices to find a working camera.
-    """
-    for device in CAMERA_DEVICES:
-        try:
-            print(f"Attempting to open camera device: {device}")
-
-            # Try V4L2 backend explicitly for Pi Camera
-            if isinstance(device, str) and device.startswith('/dev/video'):
-                # Use V4L2 backend for device path
-                cap = cv2.VideoCapture(device, cv2.CAP_V4L2)
-            else:
-                # For numeric indices, try V4L2 backend first
-                cap = cv2.VideoCapture(device, cv2.CAP_V4L2)
-
-            if not cap.isOpened():
-                print(f"  Failed to open {device}, trying next...")
-                continue
-
-            # Set buffer size to reduce latency
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-
-            # Set resolution
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, DEFAULT_RESOLUTION[0])
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, DEFAULT_RESOLUTION[1])
-
-            # Try reading a frame to verify it works
-            ret, _ = cap.read()
-            if ret:
-                print(f"  Successfully opened camera at {device}")
-                return cap
-            else:
-                print(f"  Camera opened but failed to read frame from {device}")
-                cap.release()
-        except Exception as e:
-            print(f"  Exception opening {device}: {e}")
-            if 'cap' in locals():
-                cap.release()
-            continue
-
-    return None
-
-
-def capture_loop():
-    """
-    Continuously captures frames from the camera and decodes barcodes.
+    Continuously captures frames from the camera using Picamera2 (libcamera).
     Runs in a background thread.
     """
-    global latest_scan_id, latest_scan, camera_error, camera_cap, camera_running
+    global latest_frame, camera_error, picam2
 
     print("Starting camera capture loop...")
 
     try:
-        # Open camera with V4L2 backend
-        camera_cap = open_camera()
+        pic = Picamera2()
+        picam2 = pic
 
-        if camera_cap is None:
-            with scan_lock:
-                camera_error = "Could not open camera - tried all available devices"
-            print(f"ERROR: {camera_error}")
-            return
+        # Simple 640x480 RGB config
+        config = pic.create_video_configuration(
+            main={"size": (640, 480), "format": "RGB888"}
+        )
+        pic.configure(config)
+        pic.start()
 
-        # Get actual resolution
-        actual_width = int(camera_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        actual_height = int(camera_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        print(f"Camera opened successfully at {actual_width}x{actual_height}")
+        print("Camera opened successfully (640x480 RGB)")
 
-        # Warm up: read a few frames to initialize the camera
-        print("Warming up camera...")
-        warmup_failures = 0
-        for i in range(CAMERA_WARMUP_FRAMES):
-            ret, _ = camera_cap.read()
-            if not ret:
-                warmup_failures += 1
-                if warmup_failures >= CAMERA_WARMUP_FRAMES:
-                    with scan_lock:
-                        camera_error = "Camera opened but cannot read frames"
-                    print(f"ERROR: {camera_error}")
-                    camera_cap.release()
-                    camera_cap = None
-                    return
-            time.sleep(0.1)
-        print("Camera warmup complete")
-
-        last_code = None
-        last_code_time = 0
-        consecutive_failures = 0
-        max_consecutive_failures = 10
-
-        while camera_running:
+        while running:
             try:
-                # Capture frame
-                ret, frame = camera_cap.read()
+                frame = pic.capture_array()
+                with frame_lock:
+                    latest_frame = frame
+            except Exception as e:
+                print(f"Error capturing frame: {e}")
+                with scan_lock:
+                    camera_error = f"Camera capture error: {str(e)}"
+                time.sleep(1)  # Back off on errors
 
-                if not ret:
-                    consecutive_failures += 1
-                    if consecutive_failures >= max_consecutive_failures:
-                        print(f"ERROR: {consecutive_failures} consecutive frame read failures")
-                        with scan_lock:
-                            camera_error = f"Camera read failure after {consecutive_failures} attempts"
-                        break
-                    # Brief delay before retry
-                    time.sleep(FRAME_CAPTURE_INTERVAL * 2)
-                    continue
+            time.sleep(CAPTURE_INTERVAL)  # ~14 fps
 
-                # Reset failure counter on successful read
-                consecutive_failures = 0
+    except Exception as e:
+        print(f"Fatal error in camera capture loop: {e}")
+        with scan_lock:
+            camera_error = f"Fatal camera error: {str(e)}"
+    finally:
+        if picam2 is not None:
+            try:
+                picam2.stop()
+                picam2.close()
+            except Exception:
+                pass
+            picam2 = None
+            print("Camera released")
 
-                # Decode barcodes from frame
-                barcodes = pyzbar.decode(frame)
 
-                if barcodes:
-                    # Get the first barcode
-                    barcode = barcodes[0]
-                    code = barcode.data.decode('utf-8')
-                    now_ms = int(time.time() * 1000)
+def barcode_decode_loop():
+    """
+    Continuously decodes barcodes from captured frames.
+    Runs in a background thread separate from capture.
+    """
+    global latest_scan_id, latest_scan, camera_error
+
+    print("Starting barcode decode loop...")
+
+    last_code = None
+    last_time = 0.0
+
+    while running:
+        try:
+            frame = None
+            with frame_lock:
+                if latest_frame is not None:
+                    frame = latest_frame.copy()
+
+            if frame is not None:
+                # Picamera2 gives RGB, OpenCV/pyzbar likes BGR
+                bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                barcodes = decode_barcodes(bgr)
+
+                now = time.time() * 1000
+
+                for bc in barcodes:
+                    code = bc.data.decode("utf-8").strip()
+                    if not code:
+                        continue
 
                     # Debounce: ignore if same code within debounce window
-                    if code == last_code and (now_ms - last_code_time) < DEBOUNCE_MS:
+                    if code == last_code and (now - last_time) < DEBOUNCE_MS:
+                        # Same label still in front of camera, ignore
                         continue
 
                     # New scan detected
-                    last_code = code
-                    last_code_time = now_ms
-
                     with scan_lock:
                         latest_scan_id += 1
                         latest_scan = {
@@ -182,28 +140,17 @@ def capture_loop():
 
                     print(f"Scan #{latest_scan_id}: {code}")
 
-                # Control frame rate
-                time.sleep(FRAME_CAPTURE_INTERVAL)
+                    last_code = code
+                    last_time = now
+                    break  # Only handle one per frame
 
-            except Exception as e:
-                print(f"Error in capture loop: {e}")
-                consecutive_failures += 1
-                if consecutive_failures >= max_consecutive_failures:
-                    with scan_lock:
-                        camera_error = f"Camera error: {str(e)}"
-                    break
-                time.sleep(1)  # Back off on errors
+            time.sleep(DECODE_INTERVAL)  # Small delay to avoid pegging CPU
 
-    except Exception as e:
-        print(f"Fatal error in capture loop: {e}")
-        with scan_lock:
-            camera_error = f"Fatal camera error: {str(e)}"
-    finally:
-        # Cleanup camera
-        if camera_cap is not None:
-            camera_cap.release()
-            camera_cap = None
-            print("Camera released")
+        except Exception as e:
+            print(f"Error in barcode decode loop: {e}")
+            with scan_lock:
+                camera_error = f"Barcode decode error: {str(e)}"
+            time.sleep(1)  # Back off on errors
 
 
 @app.route('/health', methods=['GET'])
@@ -212,7 +159,7 @@ def health():
     with scan_lock:
         if camera_error:
             return jsonify({"status": "error", "error": camera_error}), 500
-        if camera_cap is None and camera_running:
+        if picam2 is None and running:
             return jsonify({"status": "error", "error": "Camera not initialized"}), 500
     return jsonify({"status": "ok"})
 
@@ -271,21 +218,19 @@ def next_scan():
                     "error": camera_error
                 }), 500
 
-            if latest_scan and latest_scan["id"] > since_id:
+            if latest_scan is not None and latest_scan["id"] > since_id:
                 # Return immediately
                 return jsonify({
                     "success": True,
-                    "id": latest_scan["id"],
-                    "code": latest_scan["code"],
-                    "timestamp": latest_scan["timestamp"]
+                    **latest_scan
                 })
 
         # No new scan available, wait for one (long-polling)
-        start_time = time.time()
-        check_interval = 0.1  # Check every 100ms
+        deadline = time.time() + NEXT_SCAN_TIMEOUT
+        start_id = since_id
 
-        while (time.time() - start_time) < NEXT_SCAN_TIMEOUT:
-            time.sleep(check_interval)
+        while time.time() < deadline:
+            time.sleep(0.1)  # Check every 100ms
 
             with scan_lock:
                 # Check for errors
@@ -297,17 +242,15 @@ def next_scan():
                     }), 500
 
                 # Check for new scan
-                if latest_scan and latest_scan["id"] > since_id:
+                if latest_scan is not None and latest_scan["id"] > since_id:
                     return jsonify({
                         "success": True,
-                        "id": latest_scan["id"],
-                        "code": latest_scan["code"],
-                        "timestamp": latest_scan["timestamp"]
+                        **latest_scan
                     })
 
         # Timeout - no new scan
         with scan_lock:
-            current_id = latest_scan["id"] if latest_scan else since_id
+            current_id = latest_scan["id"] if latest_scan else start_id
         return jsonify({
             "success": False,
             "id": current_id,
@@ -323,45 +266,47 @@ def next_scan():
         }), 500
 
 
-def start_camera_thread():
-    """Start the camera capture thread"""
-    global camera_thread, camera_running
+def start_threads():
+    """Start camera capture and barcode decode threads"""
+    global running
 
-    if camera_thread is not None and camera_thread.is_alive():
-        return
+    running = True
 
-    camera_running = True
-    camera_thread = threading.Thread(target=capture_loop, daemon=True)
-    camera_thread.start()
-    print("Camera capture thread started")
+    t1 = Thread(target=camera_capture_loop, daemon=True)
+    t2 = Thread(target=barcode_decode_loop, daemon=True)
+
+    t1.start()
+    t2.start()
+
+    print("Camera capture and barcode decode threads started")
 
 
-def stop_camera_thread():
-    """Stop the camera capture thread"""
-    global camera_running, camera_thread
+def stop_threads():
+    """Stop camera capture and barcode decode threads"""
+    global running
 
-    camera_running = False
-    if camera_thread is not None:
-        camera_thread.join(timeout=2.0)
-        camera_thread = None
-    print("Camera capture thread stopped")
+    running = False
+    # Give threads a moment to finish
+    time.sleep(0.5)
+    print("Camera threads stopped")
 
 
 if __name__ == '__main__':
     print("Starting Camera Sidecar Service...")
+    print("Using libcamera (Picamera2) for camera access")
     print("Listening on http://127.0.0.1:7313")
     print("Endpoints:")
     print("  GET  /health     - Health check")
     print("  GET  /next_scan  - Long-poll for next barcode scan")
     print("\nPress Ctrl+C to stop")
 
-    # Start camera capture thread
-    start_camera_thread()
+    # Start camera capture and decode threads
+    start_threads()
 
     try:
         app.run(host='127.0.0.1', port=7313, debug=False, threaded=True)
     except KeyboardInterrupt:
         print("\nShutting down...")
     finally:
-        stop_camera_thread()
+        stop_threads()
         print("Camera sidecar stopped")
