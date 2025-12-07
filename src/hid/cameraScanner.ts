@@ -73,8 +73,6 @@ export async function startCameraScanner(): Promise<boolean> {
       console.log('Camera sidecar is healthy, starting continuous scanning stream...');
     }
 
-    console.log('Camera sidecar is healthy, starting continuous scanning stream...');
-
     // Start the continuous scan stream
     console.log('[CameraScanner] Calling startScanStream...');
     stopStream = startScanStream(handleScanEvent);
