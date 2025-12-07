@@ -94,4 +94,10 @@ if (typeof window !== 'undefined') {
       throw error;
     }
   };
+
+  // Manually start the camera scanner (useful for debugging)
+  (window as any).startCameraScanner = async () => {
+    const { startCameraScanner } = await import('../hid/cameraScanner');
+    return startCameraScanner();
+  };
 }

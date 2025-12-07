@@ -42,20 +42,35 @@ export async function startCameraScanner(): Promise<boolean> {
       return false;
     }
 
-    // Wait a moment for the sidecar to start up
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // Wait for the sidecar to start up and initialize (camera initialization can take time)
+    // Retry health check with exponential backoff
+    let healthCheckPassed = false;
+    const maxRetries = 10;
+    const initialDelay = 2000; // Start with 2 seconds
 
-    // Check if sidecar is healthy
-    const health = await checkSidecarHealth();
-    if (!health.ok) {
-      console.error(
-        'Camera sidecar is not reachable after startup. ' +
-        'The process may have failed to start or is still initializing.'
-      );
-      if (health.error) {
-        console.error('Sidecar error:', health.error);
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, initialDelay + attempt * 500));
+
+      const health = await checkSidecarHealth();
+      if (health.ok) {
+        console.log(`[CameraScanner] Sidecar health check passed on attempt ${attempt + 1}`);
+        healthCheckPassed = true;
+        break;
       }
-      return false;
+
+      console.log(`[CameraScanner] Health check attempt ${attempt + 1}/${maxRetries} failed, retrying...`);
+      if (health.error) {
+        console.log(`[CameraScanner] Health check error: ${health.error}`);
+      }
+    }
+
+    if (!healthCheckPassed) {
+      console.warn(
+        'Camera sidecar health check failed after multiple retries. ' +
+        'Proceeding anyway - the sidecar may still be initializing.'
+      );
+    } else {
+      console.log('Camera sidecar is healthy, starting continuous scanning stream...');
     }
 
     console.log('Camera sidecar is healthy, starting continuous scanning stream...');
