@@ -350,7 +350,7 @@ async fn get_camera_sidecar_status(
     scanner: tauri::State<'_, ScannerProc>,
     scanner_error: tauri::State<'_, ScannerError>,
 ) -> Result<serde_json::Value, String> {
-    let proc_guard = scanner.0.lock().map_err(|e| format!("Failed to lock scanner state: {}", e))?;
+    let mut proc_guard = scanner.0.lock().map_err(|e| format!("Failed to lock scanner state: {}", e))?;
     let error_guard = scanner_error.0.lock().map_err(|e| format!("Failed to lock error state: {}", e))?;
 
     let mut status = serde_json::json!({
@@ -365,7 +365,7 @@ async fn get_camera_sidecar_status(
         status["running"] = serde_json::Value::Bool(true);
         status["pid"] = serde_json::Value::Number(child.id().into());
 
-        // Check if process has exited
+        // Check if process has exited (try_wait requires mutable access)
         if let Ok(Some(exit_status)) = child.try_wait() {
             status["exited"] = serde_json::Value::Bool(true);
             status["running"] = serde_json::Value::Bool(false);
