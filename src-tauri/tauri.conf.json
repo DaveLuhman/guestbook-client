@@ -40,11 +40,6 @@
       }
     }
   },
-  "plugins": {
-    "crabcamera": {
-      "enabled": true
-    }
-  },
   "bundle": {
     "active": true,
     "targets": "all",

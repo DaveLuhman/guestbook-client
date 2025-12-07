@@ -15,7 +15,7 @@ use tauri::Manager;
 use tauri::Listener;
 
 use api::entries::{submit_entry, CardData};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::process::{Command, Child, Stdio};
 use std::path::PathBuf;
 use std::io::{BufRead, BufReader};
@@ -342,10 +342,46 @@ fn get_app_version() -> String {
 
 // Scanner process state holder
 struct ScannerProc(Mutex<Option<Child>>);
+// Last error from scanner process
+struct ScannerError(Arc<Mutex<Option<String>>>);
+
+#[tauri::command]
+async fn get_camera_sidecar_status(
+    scanner: tauri::State<'_, ScannerProc>,
+    scanner_error: tauri::State<'_, ScannerError>,
+) -> Result<serde_json::Value, String> {
+    let proc_guard = scanner.0.lock().map_err(|e| format!("Failed to lock scanner state: {}", e))?;
+    let error_guard = scanner_error.0.lock().map_err(|e| format!("Failed to lock error state: {}", e))?;
+
+    let mut status = serde_json::json!({
+        "running": false,
+        "pid": None::<u32>,
+        "exited": false,
+        "exit_code": None::<i32>,
+        "last_error": error_guard.as_ref().map(|s| s.as_str()),
+    });
+
+    if let Some(ref mut child) = *proc_guard {
+        status["running"] = serde_json::Value::Bool(true);
+        status["pid"] = serde_json::Value::Number(child.id().into());
+
+        // Check if process has exited
+        if let Ok(Some(exit_status)) = child.try_wait() {
+            status["exited"] = serde_json::Value::Bool(true);
+            status["running"] = serde_json::Value::Bool(false);
+            if let Some(code) = exit_status.code() {
+                status["exit_code"] = serde_json::Value::Number(code.into());
+            }
+        }
+    }
+
+    Ok(status)
+}
 
 #[tauri::command]
 async fn start_camera_sidecar(
     scanner: tauri::State<'_, ScannerProc>,
+    scanner_error: tauri::State<'_, ScannerError>,
 ) -> Result<(), String> {
     let mut proc_guard = scanner.0.lock().map_err(|e| format!("Failed to lock scanner state: {}", e))?;
 
@@ -398,7 +434,14 @@ async fn start_camera_sidecar(
         .spawn()
         .map_err(|e| format!("Failed to spawn camera sidecar: {} (script: {:?})", e, script_path))?;
 
-    // Capture stderr for logging
+    // Capture stderr for logging and error tracking
+    // Clear previous error
+    {
+        let mut err_guard = scanner_error.0.lock().map_err(|e| format!("Failed to lock error state: {}", e))?;
+        *err_guard = None;
+    }
+
+    let error_state = Arc::clone(&scanner_error.0);
     if let Some(stderr) = child.stderr.take() {
         let stderr_reader = BufReader::new(stderr);
         let child_id = child.id();
@@ -406,6 +449,10 @@ async fn start_camera_sidecar(
             for line in stderr_reader.lines() {
                 if let Ok(line) = line {
                     log::error!("[Camera Sidecar PID {}] {}", child_id, line);
+                    // Store last error line for frontend access
+                    if let Ok(mut err_guard) = error_state.lock() {
+                        *err_guard = Some(line.clone());
+                    }
                 }
             }
         });
@@ -497,6 +544,7 @@ fn main() {
 
     // Initialize scanner process state
     let scanner_proc = ScannerProc(Mutex::new(None));
+    let scanner_error = ScannerError(Arc::new(Mutex::new(None)));
 
     // Build the Tauri builder with conditional devtools plugin
     let builder = {
@@ -514,6 +562,7 @@ fn main() {
         .manage(config_manager)
         .manage(hid_manager)
         .manage(scanner_proc)
+        .manage(scanner_error)
         .invoke_handler(tauri::generate_handler![
             get_hid_devices,
             start_barcode_listener,
@@ -536,6 +585,7 @@ fn main() {
             get_app_version,
             start_camera_sidecar,
             stop_camera_sidecar,
+            get_camera_sidecar_status,
         ])
         .setup(|app| {
             // Get the main window and HID manager
