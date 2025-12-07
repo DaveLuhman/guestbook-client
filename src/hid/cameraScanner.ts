@@ -83,16 +83,28 @@ export async function startCameraScanner(): Promise<boolean> {
  */
 function handleScanEvent(scan: ScanEvent): void {
   const barcodeText = scan.code;
-  console.log('Barcode detected:', barcodeText);
+  console.log('[CameraScanner] Barcode detected from sidecar:', barcodeText, 'Raw scan:', scan);
 
   // Parse barcode format ^1234567^ to extract OneCard number
+  // Also handle plain numeric codes (7 digits) as fallback
+  let onecard: string | null = null;
   const onecardMatch = barcodeText.match(/^\^(\d+)\^$/);
-  if (!onecardMatch) {
-    console.warn('Barcode format not recognized:', barcodeText);
+  if (onecardMatch) {
+    onecard = onecardMatch[1];
+  } else if (/^\d{7}$/.test(barcodeText)) {
+    // Fallback: if it's already a 7-digit number, use it directly
+    onecard = barcodeText;
+    console.log('[CameraScanner] Using plain numeric format:', onecard);
+  } else {
+    console.warn('[CameraScanner] Barcode format not recognized:', barcodeText, 'Expected format: ^1234567^ or 1234567');
     return;
   }
 
-  const onecard = onecardMatch[1];
+  if (!onecard) {
+    console.error('[CameraScanner] Failed to extract OneCard number from:', barcodeText);
+    return;
+  }
+
   const now = Date.now();
 
   // Prevent duplicate scans of the same code within cooldown period

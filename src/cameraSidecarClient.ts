@@ -88,7 +88,7 @@ export function startScanStream(onScan: (scan: ScanEvent) => void): () => void {
         }
 
         const json = await res.json();
-        console.log(`[CameraSidecar] Received response:`, json);
+        console.log(`[CameraSidecar] Received response from /next_scan:`, json);
 
         if (json.success && json.code) {
           // New scan received

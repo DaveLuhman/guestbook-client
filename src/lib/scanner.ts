@@ -80,4 +80,18 @@ if (typeof window !== 'undefined') {
       throw error;
     }
   };
+
+  // Test the /next_scan endpoint directly
+  (window as any).testNextScan = async () => {
+    try {
+      console.log('Testing /next_scan endpoint...');
+      const res = await fetch('http://127.0.0.1:7313/next_scan?since_id=0');
+      const json = await res.json();
+      console.log('Response from /next_scan:', json);
+      return json;
+    } catch (error) {
+      console.error('Failed to test /next_scan:', error);
+      throw error;
+    }
+  };
 }
