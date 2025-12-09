@@ -385,10 +385,16 @@ async fn start_camera_sidecar(
 ) -> Result<(), String> {
     let mut proc_guard = scanner.0.lock().map_err(|e| format!("Failed to lock scanner state: {}", e))?;
 
-    // If already running, return Ok
-    if proc_guard.is_some() {
-        log::info!("Camera sidecar is already running");
-        return Ok(());
+    // Check if process has exited and needs restart
+    if let Some(ref mut child) = *proc_guard {
+        if let Ok(Some(_)) = child.try_wait() {
+            log::warn!("Camera sidecar process has exited, restarting...");
+            // Process exited, remove it so we can start a new one
+            proc_guard.take();
+        } else {
+            log::info!("Camera sidecar is already running");
+            return Ok(());
+        }
     }
 
     log::info!("Starting camera sidecar...");

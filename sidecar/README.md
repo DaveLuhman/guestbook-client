@@ -365,6 +365,23 @@ The frontend includes retry logic (10 attempts with exponential backoff). If hea
 - Verify the Python script path is correct
 - Check Python process logs for errors
 
+### Automatic Restart
+
+The system includes automatic restart logic:
+- **Rust backend**: If `start_camera_sidecar` is called and the process has exited, it will automatically restart it
+- **Frontend monitoring**: The `checkCameraHealth()` function runs every 5 seconds and will automatically restart the sidecar if it detects the process has exited
+
+This ensures the camera sidecar stays running even if it crashes or is killed.
+
+### GTK Widget Errors
+
+If you see GTK widget assertion errors in system logs (e.g., `gtk_widget_hide: assertion 'GTK_IS_WIDGET (widget)' failed`):
+- These are typically WebKitGTK/Tauri UI errors, not camera sidecar errors
+- The camera sidecar runs as a separate Python process and is unaffected by GTK errors
+- However, if the Tauri app crashes due to GTK errors, it may kill the sidecar process
+- The automatic restart logic will restart the sidecar when the app recovers
+- To investigate GTK errors, check Tauri/WebKitGTK logs and ensure proper window/widget lifecycle management
+
 ## Systemd Service (Optional)
 
 To run as a standalone systemd service (instead of being spawned by Tauri), create a service file:

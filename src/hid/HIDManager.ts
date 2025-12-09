@@ -260,15 +260,58 @@ function setupCameraStatusMonitoring() {
   setInterval(checkCameraHealth, 5000);
 }
 
-// Check camera sidecar health via /health endpoint
+// Check camera sidecar health via /health endpoint and restart if needed
 async function checkCameraHealth() {
   try {
+    // First check if the process is still running
+    type ProcessStatus = {
+      running: boolean;
+      exited: boolean;
+      exit_code: number | null;
+      last_error: string | null;
+    };
+    let processStatus: ProcessStatus | null = null;
+    try {
+      processStatus = await invoke<ProcessStatus>('get_camera_sidecar_status');
+    } catch (err) {
+      console.error('[CameraMonitor] Failed to get sidecar process status:', err);
+    }
+
+    // If process has exited, try to restart it
+    if (processStatus?.exited && !processStatus?.running) {
+      console.warn(
+        `[CameraMonitor] Sidecar process has exited (code: ${processStatus.exit_code}), attempting restart...`
+      );
+      updateDeviceStatusIndicator('camera', 'connecting', 'Restarting camera service...');
+
+      try {
+        await invoke('start_camera_sidecar');
+        // Wait a moment for restart
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      } catch (restartErr) {
+        console.error('[CameraMonitor] Failed to restart sidecar:', restartErr);
+        updateDeviceStatusIndicator('camera', 'error', `Restart failed: ${restartErr}`);
+        return;
+      }
+    }
+
+    // Check HTTP health
     const health = await checkSidecarHealth();
     if (health.ok) {
       updateDeviceStatusIndicator('camera', 'connected');
     } else {
       const errorMsg = health.error || 'Camera sidecar not responding';
       updateDeviceStatusIndicator('camera', 'error', errorMsg);
+
+      // If health check fails and process status shows it's not running, try restart
+      if (processStatus && !processStatus.running) {
+        console.warn('[CameraMonitor] Sidecar not running, attempting restart...');
+        try {
+          await invoke('start_camera_sidecar');
+        } catch (restartErr) {
+          console.error('[CameraMonitor] Failed to restart sidecar:', restartErr);
+        }
+      }
     }
   } catch (error) {
     console.error('Failed to check camera health:', error);
