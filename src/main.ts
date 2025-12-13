@@ -685,16 +685,18 @@ function initializeCameraVideo() {
 
   // Add some basic styling for the video
   videoContainer.style.cssText += `
-    margin-top: 20px;
+    margin-top: -50px;
     text-align: center;
     max-width: 100%;
-    overflow: hidden;
+    overflow: visible;
   `;
   videoStream.style.cssText += `
     max-width: 100%;
     max-height: 300px;
     border: 2px solid #0066cc;
     border-radius: 8px;
+    transform: rotate(-90deg);
+    transform-origin: center center;
   `;
 
   // Handle stream errors gracefully
