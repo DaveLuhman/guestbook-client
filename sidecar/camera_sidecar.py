@@ -79,15 +79,18 @@ def camera_capture_loop():
         pic.configure(config)
 
         # Enable autofocus
+        autofocus_enabled = False
         try:
             pic.set_controls({"AfMode": 1, "AfTrigger": 0})  # Continuous autofocus
             print("[CAPTURE] Autofocus enabled (continuous mode)")
+            autofocus_enabled = True
         except Exception as e:
             print(f"[CAPTURE] Warning: Could not enable autofocus: {e}")
             # Try alternative autofocus method
             try:
                 pic.set_controls({"AfMode": 2})  # Auto mode
                 print("[CAPTURE] Autofocus enabled (auto mode)")
+                autofocus_enabled = True
             except Exception as e2:
                 print(f"[CAPTURE] Warning: Alternative autofocus also failed: {e2}")
 
@@ -95,6 +98,16 @@ def camera_capture_loop():
 
         # Wait a moment for autofocus to settle
         time.sleep(1.0)
+
+        # Trigger initial autofocus
+        if autofocus_enabled:
+            try:
+                pic.set_controls({"AfTrigger": 1})  # Trigger autofocus
+                time.sleep(0.5)  # Give it a moment to focus
+                pic.set_controls({"AfTrigger": 0})  # Return to continuous mode
+                print("[CAPTURE] Initial autofocus triggered")
+            except Exception as e:
+                print(f"[CAPTURE] Warning: Could not trigger initial autofocus: {e}")
 
         print("Camera opened successfully (1280x720 RGB)")
 
@@ -109,6 +122,7 @@ def camera_capture_loop():
             print(f"[CAPTURE] Failed to capture test frame: {e}")
 
         frame_count = 0
+        autofocus_trigger_interval = 150  # Trigger autofocus every ~10 seconds (150 frames at 14fps)
         while running:
             try:
                 frame = pic.capture_array()
@@ -119,6 +133,17 @@ def camera_capture_loop():
                     latest_frame = frame
                     # Explicitly delete old frame reference to help GC
                     del old_frame
+
+                # Periodically trigger autofocus to keep it adjusting
+                if autofocus_enabled and frame_count % autofocus_trigger_interval == 0:
+                    try:
+                        pic.set_controls({"AfTrigger": 1})  # Trigger autofocus
+                        time.sleep(0.1)  # Brief pause for focus adjustment
+                        pic.set_controls({"AfTrigger": 0})  # Return to continuous mode
+                        if frame_count % (autofocus_trigger_interval * 3) == 0:  # Log every 3rd trigger
+                            print(f"[CAPTURE] Autofocus retriggered (frame {frame_count})")
+                    except Exception as e:
+                        print(f"[CAPTURE] Warning: Could not retrigger autofocus: {e}")
 
                 # Log every 50 frames (~3.5 seconds at 14fps)
                 if frame_count % 50 == 0:
@@ -432,6 +457,28 @@ def health():
             return jsonify({"status": "error", "error": "Camera not initialized"}), 500
     print(f"[HTTP] /health returning OK")
     return jsonify({"status": "ok"})
+
+
+@app.route('/trigger_autofocus', methods=['POST', 'OPTIONS'])
+def trigger_autofocus():
+    """Manually trigger autofocus"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    print(f"[HTTP] POST /trigger_autofocus")
+    try:
+        if picam2 is None:
+            return jsonify({"success": False, "error": "Camera not initialized"}), 500
+
+        # Trigger autofocus
+        picam2.set_controls({"AfTrigger": 1})
+        time.sleep(0.2)  # Give it a moment to focus
+        picam2.set_controls({"AfTrigger": 0})  # Return to continuous mode
+
+        print("[HTTP] Autofocus triggered manually")
+        return jsonify({"success": True, "message": "Autofocus triggered"})
+    except Exception as e:
+        print(f"[HTTP] Error triggering autofocus: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route('/debug/memory', methods=['GET'])
