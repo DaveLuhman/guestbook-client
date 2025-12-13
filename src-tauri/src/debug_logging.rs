@@ -4,7 +4,7 @@
 #[cfg(debug_assertions)]
 use chrono::{DateTime, Local};
 #[cfg(debug_assertions)]
-use log::{Level, LevelFilter, Log, Metadata, Record};
+use log::{LevelFilter, Log, Metadata, Record};
 #[cfg(debug_assertions)]
 use std::collections::VecDeque;
 #[cfg(debug_assertions)]

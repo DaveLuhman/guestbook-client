@@ -4,13 +4,12 @@
 #[cfg(debug_assertions)]
 use axum::{
     extract::Query,
-    http::StatusCode,
     response::{Html, Json},
     routing::get,
     Router,
 };
 #[cfg(debug_assertions)]
-use debug_logging::{get_debug_logger, LogEntry};
+use crate::debug_logging::{get_debug_logger, LogEntry};
 #[cfg(debug_assertions)]
 use serde::{Deserialize, Serialize};
 #[cfg(debug_assertions)]
