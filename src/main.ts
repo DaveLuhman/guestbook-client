@@ -3,6 +3,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { errorHandler } from './error/errorHandler';
 import { startHIDManager } from './hid/HIDManager';
 import { soundManager } from './sound/soundManager';
+import { initDebugLogger } from './debugLogger';
+
+// Initialize debug logging (only works in debug builds)
+initDebugLogger();
 
 interface config {
   server_url: string;

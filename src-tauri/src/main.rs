@@ -5,6 +5,11 @@ mod config;
 mod devices;
 mod hid;
 mod logging;
+
+#[cfg(debug_assertions)]
+mod debug_logging;
+#[cfg(debug_assertions)]
+mod debug_server;
 use api::devices::{register_device, send_heartbeat, reset_device};
 use config::config_manager::{get_full_config, ConfigManager};
 use devices::barcode::{listen_to_barcode, open_symbol_scanner};
@@ -268,6 +273,17 @@ fn test_device_detection() -> Result<String, String> {
     }
 
     Ok(result)
+}
+
+#[cfg(debug_assertions)]
+#[tauri::command]
+async fn log_frontend_message(
+    level: String,
+    message: String,
+    target: Option<String>,
+) -> Result<(), String> {
+    debug_logging::add_frontend_log(level, message, target);
+    Ok(())
 }
 
 #[tauri::command]
@@ -545,6 +561,13 @@ fn main() {
         }
     }
 
+    // Initialize debug logging (HTTP server started in setup callback)
+    #[cfg(debug_assertions)]
+    {
+        debug_logging::init_debug_logging();
+        log::info!("Debug logging initialized");
+    }
+
     // Initialize HID manager
     let hid_manager = HIDManager::new();
 
@@ -592,8 +615,21 @@ fn main() {
             start_camera_sidecar,
             stop_camera_sidecar,
             get_camera_sidecar_status,
+            #[cfg(debug_assertions)]
+            log_frontend_message,
         ])
         .setup(|app| {
+            // Start debug HTTP server for remote log viewing (debug builds only)
+            #[cfg(debug_assertions)]
+            {
+                let debug_port = 7314;
+                tokio::spawn(async move {
+                    if let Err(e) = debug_server::start_debug_server(debug_port).await {
+                        eprintln!("Failed to start debug log server: {}", e);
+                    }
+                });
+            }
+
             // Get the main window and HID manager
             let window = app.get_webview_window("main").unwrap();
             let hid_manager = app.state::<HIDManager>();
