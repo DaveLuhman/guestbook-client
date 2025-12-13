@@ -186,30 +186,17 @@ def barcode_decode_loop():
 
                 # Try preprocessing approaches in order of speed/effectiveness
                 # Start with fastest methods first, only try slower ones if needed
-                barcodes = []
-                threshold_img = None
-                contrast_img = None
+                processed_images = [
+                    ("grayscale", gray),  # Fastest and most effective
+                    ("grayscale_threshold", cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]),  # Good for blurry images
+                    ("grayscale_contrast", cv2.convertScaleAbs(gray, alpha=1.5, beta=30)),  # Increase contrast
+                ]
 
-                try:
-                    # Try grayscale first (fastest)
-                    detected = decode_barcodes(gray, symbols=[
-                        ZBarSymbol.CODE128,
-                        ZBarSymbol.CODE39,
-                        ZBarSymbol.EAN13,
-                        ZBarSymbol.EAN8,
-                        ZBarSymbol.UPCA,
-                        ZBarSymbol.UPCE,
-                        ZBarSymbol.I25,
-                        ZBarSymbol.CODABAR,
-                    ])
-                    if detected:
-                        barcodes.extend(detected)
-                        if decode_count % 50 == 0:
-                            print(f"[DECODE] Found {len(detected)} barcode(s) using grayscale")
-                    else:
-                        # Try threshold if grayscale didn't work
-                        _, threshold_img = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-                        detected = decode_barcodes(threshold_img, symbols=[
+                barcodes = []
+                for method_name, processed_img in processed_images:
+                    try:
+                        # Try decoding with all barcode types enabled
+                        detected = decode_barcodes(processed_img, symbols=[
                             ZBarSymbol.CODE128,
                             ZBarSymbol.CODE39,
                             ZBarSymbol.EAN13,
@@ -222,37 +209,13 @@ def barcode_decode_loop():
                         if detected:
                             barcodes.extend(detected)
                             if decode_count % 50 == 0:
-                                print(f"[DECODE] Found {len(detected)} barcode(s) using threshold")
-                        else:
-                            # Try contrast enhancement as last resort
-                            contrast_img = cv2.convertScaleAbs(gray, alpha=1.5, beta=30)
-                            detected = decode_barcodes(contrast_img, symbols=[
-                                ZBarSymbol.CODE128,
-                                ZBarSymbol.CODE39,
-                                ZBarSymbol.EAN13,
-                                ZBarSymbol.EAN8,
-                                ZBarSymbol.UPCA,
-                                ZBarSymbol.UPCE,
-                                ZBarSymbol.I25,
-                                ZBarSymbol.CODABAR,
-                            ])
-                            if detected:
-                                barcodes.extend(detected)
-                                if decode_count % 50 == 0:
-                                    print(f"[DECODE] Found {len(detected)} barcode(s) using contrast")
-                except Exception as e:
-                    if decode_count % 50 == 0:
-                        print(f"[DECODE] Error during decode: {e}")
-                finally:
-                    # Explicitly clean up intermediate arrays to help GC
-                    del bgr
-                    del gray
-                    if threshold_img is not None:
-                        del threshold_img
-                    if contrast_img is not None:
-                        del contrast_img
-                    # Clean up frame copy after processing
-                    del frame
+                                print(f"[DECODE] Found {len(detected)} barcode(s) using {method_name}")
+                            # If we found barcodes, we can stop trying other methods
+                            break
+                    except Exception as e:
+                        if decode_count % 50 == 0:
+                            print(f"[DECODE] Error with {method_name}: {e}")
+                        continue
 
                 # Remove duplicates (same code detected multiple times)
                 seen_codes = set()
