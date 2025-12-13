@@ -644,9 +644,15 @@ fn main() {
             #[cfg(debug_assertions)]
             {
                 let debug_port = 7314;
-                tokio::spawn(async move {
-                    if let Err(e) = debug_server::start_debug_server(debug_port).await {
-                        eprintln!("Failed to start debug log server: {}", e);
+                // Use Tauri's async runtime to spawn the server task
+                tauri::async_runtime::spawn(async move {
+                    match debug_server::start_debug_server(debug_port).await {
+                        Ok(_handle) => {
+                            log::info!("Debug log server started successfully on port {}", debug_port);
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to start debug log server: {}", e);
+                        }
                     }
                 });
             }

@@ -3,8 +3,7 @@
 
 #[cfg(debug_assertions)]
 use chrono::{DateTime, Local};
-#[cfg(debug_assertions)]
-use log::{LevelFilter, Log, Metadata, Record};
+// Log trait imports removed - we're not implementing Log trait anymore
 #[cfg(debug_assertions)]
 use std::collections::VecDeque;
 #[cfg(debug_assertions)]

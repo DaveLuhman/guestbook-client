@@ -16,8 +16,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 #[cfg(debug_assertions)]
 use std::net::SocketAddr;
-#[cfg(debug_assertions)]
-use tokio::task::JoinHandle;
 
 #[cfg(debug_assertions)]
 #[derive(Deserialize)]
@@ -69,7 +67,7 @@ async fn logs_page_handler() -> Html<String> {
 }
 
 #[cfg(debug_assertions)]
-pub async fn start_debug_server(port: u16) -> Result<JoinHandle<()>, Box<dyn std::error::Error>> {
+pub async fn start_debug_server(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     let app = Router::new()
         .route("/", get(logs_page_handler))
         .route("/api/logs", get(get_logs_handler))
@@ -87,13 +85,10 @@ pub async fn start_debug_server(port: u16) -> Result<JoinHandle<()>, Box<dyn std
     log::info!("Debug log server started on http://0.0.0.0:{}", port);
     log::info!("Access logs at http://<appliance-ip>:{}", port);
 
-    let handle = tokio::spawn(async move {
-        axum::serve(listener, app)
-            .await
-            .expect("Debug server failed");
-    });
+    // Run the server - this will block until the server stops
+    axum::serve(listener, app).await?;
 
-    Ok(handle)
+    Ok(())
 }
 
 // Stub for release builds
