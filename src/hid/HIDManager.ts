@@ -98,29 +98,36 @@ export async function startHIDManager() {
         return;
       }
       updateScanData(onecard); // Show scanned value to user
-      // DO NOT play success sound here - wait for successful HTTP response
-      // Submit only the onecard value to the backend and await the result
-      // Note: Rust checks HTTP status code and returns Result<(), String>
-      // - If 2xx: Rust returns Ok(()), invoke resolves, we play success sound
-      // - If non-2xx or network error: Rust returns Err(String), invoke throws, catch block handles it
-      await invoke('submit_barcode_entry', { onecard });
-      // Only play success sound after receiving 2xx HTTP response (invoke resolved successfully)
-      soundManager.playSuccess();
-      showEntrySuccess();
+      // Submit immediately without blocking - handle response asynchronously
+      // This improves responsiveness by not waiting for HTTP response before showing feedback
+      invoke('submit_barcode_entry', { onecard })
+        .then(() => {
+          // Success - HTTP request completed with 2xx status
+          soundManager.playSuccess();
+          showEntrySuccess();
+        })
+        .catch((error) => {
+          // Error - non-2xx HTTP response or network error
+          console.error('Submit error:', error);
+          soundManager.playError();
+          // Extract error message - Tauri errors can be strings, Error objects, or custom objects
+          let errorMsg = 'Unknown barcode error';
+          if (typeof error === 'string') {
+            errorMsg = error;
+          } else if (error instanceof Error) {
+            errorMsg = error.message;
+          } else if (error && typeof error === 'object' && 'message' in error) {
+            errorMsg = String((error as { message: unknown }).message);
+          }
+          errorHandler.handleApplicationError('barcode', errorMsg, 'high');
+          showEntryError();
+        });
+      // Don't await - return immediately to allow UI to be responsive
     } catch (error) {
-      console.error('Submit error:', error);
-      // Play error sound for non-2xx HTTP response or network error
+      // This catch block handles synchronous errors (validation, etc.)
+      console.error('Process barcode error:', error);
       soundManager.playError();
-      // Extract error message - Tauri errors can be strings, Error objects, or custom objects
-      let errorMsg = 'Unknown barcode error';
-      if (typeof error === 'string') {
-        errorMsg = error;
-      } else if (error instanceof Error) {
-        errorMsg = error.message;
-      } else if (error && typeof error === 'object' && 'message' in error) {
-        errorMsg = String((error as { message: unknown }).message);
-      }
-      errorHandler.handleApplicationError('barcode', errorMsg, 'high');
+      errorHandler.handleApplicationError('barcode', 'Failed to process barcode', 'high');
       showEntryError();
     }
     // Don't call resetEntryData here - let showEntrySuccess/showEntryError handle the reset

@@ -14,9 +14,6 @@ import { ensureScannerRunning } from '../lib/scanner';
 
 let scanning = false;
 let stopStream: (() => void) | null = null;
-let lastScannedCode: string | null = null;
-let lastScanTime: number = 0;
-const SCAN_COOLDOWN = 1000; // Prevent duplicate scans within 1 second
 
 /**
  * Initialize camera scanner and start continuous scanning using the sidecar service.
@@ -118,20 +115,7 @@ function handleScanEvent(scan: ScanEvent): void {
     return;
   }
 
-  const now = Date.now();
-
-  // Prevent duplicate scans of the same code within cooldown period
-  if (
-    lastScannedCode === onecard &&
-    now - lastScanTime < SCAN_COOLDOWN
-  ) {
-    console.debug('Ignoring duplicate scan:', onecard);
-    return;
-  }
-
-  lastScannedCode = onecard;
-  lastScanTime = now;
-
+  // Debounce is now handled on the Tauri backend side
   // Emit custom event for barcode data (same format as HID scanner)
   // This ensures compatibility with existing HIDManager event listeners
   const event = new CustomEvent('camera-barcode-data', {
@@ -165,10 +149,6 @@ export async function stopCameraScanner(): Promise<void> {
 
     // Stop the scan stream
     await cleanup();
-
-    // Reset state
-    lastScannedCode = null;
-    lastScanTime = 0;
 
     console.log('Camera scanner stopped');
   } catch (error) {

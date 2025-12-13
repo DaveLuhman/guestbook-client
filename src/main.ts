@@ -651,6 +651,61 @@ async function scheduleHeartbeat() {
   }, interval);
 }
 
+/**
+ * Initialize camera video display (debug/dev mode only)
+ */
+function initializeCameraVideo() {
+  // Check if we're in debug/dev mode
+  let isDev = false;
+  try {
+    const env = (import.meta as { env?: { DEV?: boolean; MODE?: string } }).env;
+    isDev = env?.DEV === true || env?.MODE === 'development';
+  } catch {
+    isDev = false;
+  }
+
+  if (!isDev) {
+    // Production mode - don't show video
+    return;
+  }
+
+  const videoContainer = document.getElementById('camera-video-container');
+  const videoStream = document.getElementById('camera-video-stream') as HTMLImageElement;
+
+  if (!videoContainer || !videoStream) {
+    return;
+  }
+
+  // Set up MJPEG stream URL
+  const streamUrl = 'http://127.0.0.1:7313/video';
+  videoStream.src = streamUrl;
+
+  // Show the container
+  videoContainer.style.display = 'block';
+
+  // Add some basic styling for the video
+  videoContainer.style.cssText += `
+    margin-top: 20px;
+    text-align: center;
+    max-width: 100%;
+    overflow: hidden;
+  `;
+  videoStream.style.cssText += `
+    max-width: 100%;
+    max-height: 300px;
+    border: 2px solid #0066cc;
+    border-radius: 8px;
+  `;
+
+  // Handle stream errors gracefully
+  videoStream.onerror = () => {
+    console.warn('[CameraVideo] Failed to load video stream - sidecar may not be running');
+    videoContainer.style.display = 'none';
+  };
+
+  console.log('[CameraVideo] Video stream initialized (debug mode)');
+}
+
 (async () => {
   const config: config = await invoke('get_full_config');
   console.log(config);
@@ -663,6 +718,9 @@ async function scheduleHeartbeat() {
   initializeMenu();
   initializeManualEntry(); // Initialize manual entry functionality
   initializeConfig(); // Initialize config modal functionality
+
+  // Initialize camera video display (debug/dev mode only)
+  initializeCameraVideo();
 
   // Heartbeat cron task: every 10 +/- 5 minutes
   scheduleHeartbeat();

@@ -129,8 +129,26 @@ async fn submit_swipe_entry(
 #[tauri::command]
 async fn submit_barcode_entry(
     config_manager: tauri::State<'_, ConfigManager>,
+    last_scanned_id: tauri::State<'_, LastScannedId>,
     onecard: String,
 ) -> Result<(), String> {
+    // Debounce: ignore if this is the same ID as the most recently scanned
+    {
+        let last_id = last_scanned_id.0.lock().unwrap();
+        if let Some(ref last) = *last_id {
+            if last == &onecard {
+                log::debug!("Ignoring duplicate scan (debounce): {}", onecard);
+                return Ok(()); // Return success silently for duplicates
+            }
+        }
+    }
+
+    // Update last scanned ID
+    {
+        let mut last_id = last_scanned_id.0.lock().unwrap();
+        *last_id = Some(onecard.clone());
+    }
+
     let name = "Barcode".to_string();
     submit_entry(config_manager, CardData { name, onecard })
         .await
@@ -381,6 +399,8 @@ fn get_app_version() -> String {
 struct ScannerProc(Mutex<Option<Child>>);
 // Last error from scanner process
 struct ScannerError(Arc<Mutex<Option<String>>>);
+// Last scanned barcode ID for debouncing (ignore duplicates)
+struct LastScannedId(Arc<Mutex<Option<String>>>);
 
 #[tauri::command]
 async fn get_camera_sidecar_status(
@@ -595,6 +615,7 @@ fn main() {
     // Initialize scanner process state
     let scanner_proc = ScannerProc(Mutex::new(None));
     let scanner_error = ScannerError(Arc::new(Mutex::new(None)));
+    let last_scanned_id = LastScannedId(Arc::new(Mutex::new(None)));
 
     // Build the Tauri builder with conditional devtools plugin
     let builder = {
@@ -613,6 +634,7 @@ fn main() {
         .manage(hid_manager)
         .manage(scanner_proc)
         .manage(scanner_error)
+        .manage(last_scanned_id)
         .invoke_handler(tauri::generate_handler![
             get_hid_devices,
             start_barcode_listener,

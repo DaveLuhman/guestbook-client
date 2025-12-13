@@ -18,7 +18,7 @@ import threading
 import gc
 import sys
 from datetime import datetime, timezone
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response
 from threading import Thread, Lock
 from picamera2 import Picamera2
 import cv2
@@ -38,8 +38,8 @@ def add_cors_headers(response):
     return response
 
 # Configuration
-NEXT_SCAN_TIMEOUT = 8.0  # Long-poll timeout in seconds
-DEBOUNCE_MS = 800  # Ignore duplicate scans within this window (ms)
+NEXT_SCAN_TIMEOUT = 2.0  # Long-poll timeout in seconds (reduced for faster response)
+DEBOUNCE_MS = 800  # Ignore duplicate scans within this window (ms) - Note: debounce now handled in Tauri backend
 CAPTURE_FPS = 14  # Target capture rate (~14 FPS)
 CAPTURE_INTERVAL = 1.0 / CAPTURE_FPS  # ~0.07 seconds between captures
 DECODE_INTERVAL = 0.02  # Reduced delay to process frames faster (~50 FPS decode rate)
@@ -374,6 +374,49 @@ def debug_frame():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/video', methods=['GET'])
+def video_stream():
+    """
+    MJPEG video stream endpoint for displaying camera feed.
+    Only intended for debug/dev use - not for production.
+    """
+    def generate():
+        """Generator function to stream MJPEG frames"""
+        while running:
+            try:
+                with frame_lock:
+                    if latest_frame is None:
+                        time.sleep(0.1)
+                        continue
+                    # Copy frame to avoid holding lock too long
+                    frame = latest_frame.copy()
+
+                # Convert RGB to BGR for OpenCV encoding
+                bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
+                # Resize for lower bandwidth (optional - adjust as needed)
+                # Keep original size for better quality in debug
+                # bgr = cv2.resize(bgr, (640, 360))
+
+                # Encode as JPEG
+                ret, jpeg = cv2.imencode('.jpg', bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                if not ret:
+                    time.sleep(0.033)  # ~30 FPS
+                    continue
+
+                # Yield MJPEG frame
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+
+                # Small delay to control frame rate (~15 FPS for video stream)
+                time.sleep(0.067)
+            except Exception as e:
+                print(f"[VIDEO] Error in video stream: {e}")
+                time.sleep(0.1)
+
+    return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+
 @app.route('/health', methods=['GET', 'OPTIONS'])
 def health():
     """Health check endpoint"""
@@ -568,6 +611,7 @@ if __name__ == '__main__':
     print("Endpoints:")
     print("  GET  /health     - Health check")
     print("  GET  /next_scan  - Long-poll for next barcode scan")
+    print("  GET  /video      - MJPEG video stream (debug/dev only)")
     print("\nPress Ctrl+C to stop")
 
     # Start camera capture and decode threads
