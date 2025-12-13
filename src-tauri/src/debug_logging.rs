@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 const MAX_LOG_ENTRIES: usize = 10000; // Keep last 10k log entries
 
 #[cfg(debug_assertions)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
 pub struct LogEntry {
     pub timestamp: String,
     pub level: String,
