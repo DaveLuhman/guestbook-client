@@ -293,12 +293,33 @@ async fn log_error(
     message: String,
     timestamp: String,
 ) -> Result<(), String> {
+    let log_message = format!("[{}] {}: {}", source, timestamp, message);
     match level.as_str() {
-        "low" => log::debug!("[{}] {}: {}", source, timestamp, message),
-        "medium" => log::info!("[{}] {}: {}", source, timestamp, message),
-        "high" => log::warn!("[{}] {}: {}", source, timestamp, message),
-        "critical" => log::error!("[{}] {}: {}", source, timestamp, message),
-        _ => log::info!("[{}] {}: {}", source, timestamp, message),
+        "low" => {
+            log::debug!("{}", log_message);
+            #[cfg(debug_assertions)]
+            debug_logging::add_backend_log("DEBUG".to_string(), source.clone(), log_message.clone());
+        }
+        "medium" => {
+            log::info!("{}", log_message);
+            #[cfg(debug_assertions)]
+            debug_logging::add_backend_log("INFO".to_string(), source.clone(), log_message.clone());
+        }
+        "high" => {
+            log::warn!("{}", log_message);
+            #[cfg(debug_assertions)]
+            debug_logging::add_backend_log("WARN".to_string(), source.clone(), log_message.clone());
+        }
+        "critical" => {
+            log::error!("{}", log_message);
+            #[cfg(debug_assertions)]
+            debug_logging::add_backend_log("ERROR".to_string(), source.clone(), log_message.clone());
+        }
+        _ => {
+            log::info!("{}", log_message);
+            #[cfg(debug_assertions)]
+            debug_logging::add_backend_log("INFO".to_string(), source.clone(), log_message.clone());
+        }
     }
     Ok(())
 }

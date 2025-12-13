@@ -87,31 +87,25 @@ static DEBUG_LOGGER: Lazy<DebugLogger> = Lazy::new(|| {
 
 #[cfg(debug_assertions)]
 pub fn init_debug_logging() {
-    log::set_max_level(LevelFilter::Debug);
-    // We need to create a wrapper that implements Log but forwards to the static logger
-    struct LoggerWrapper;
-    impl Log for LoggerWrapper {
-        fn enabled(&self, _metadata: &Metadata) -> bool {
-            true
-        }
-        fn log(&self, record: &Record) {
-            let now: DateTime<Local> = Local::now();
-            let timestamp = now.format("%Y-%m-%d %H:%M:%S%.3f").to_string();
+    // Don't set a logger here - Tauri devtools plugin already sets one
+    // We'll just use the in-memory buffer for frontend logs and manually capture backend logs
+    // Backend logs will still go to devtools, but we can also add them to our buffer manually
+}
 
-            let entry = LogEntry {
-                timestamp,
-                level: format!("{}", record.level()),
-                target: record.target().to_string(),
-                message: record.args().to_string(),
-                source: "backend".to_string(),
-            };
+#[cfg(debug_assertions)]
+pub fn add_backend_log(level: String, target: String, message: String) {
+    let now: DateTime<Local> = Local::now();
+    let timestamp = now.format("%Y-%m-%d %H:%M:%S%.3f").to_string();
 
-            DEBUG_LOGGER.add_log(entry);
-        }
-        fn flush(&self) {}
-    }
-    log::set_boxed_logger(Box::new(LoggerWrapper))
-        .expect("Failed to set debug logger");
+    let entry = LogEntry {
+        timestamp,
+        level,
+        target,
+        message,
+        source: "backend".to_string(),
+    };
+
+    DEBUG_LOGGER.add_log(entry);
 }
 
 #[cfg(debug_assertions)]
