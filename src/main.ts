@@ -15,6 +15,7 @@ interface config {
   device_location: string;
   device_friendly_name: string;
   first_run: boolean;
+  camera_preview_enabled: boolean;
 }
 
 // Menu state management
@@ -405,6 +406,9 @@ async function openConfig() {
       // Load configuration data
       const config: config = await invoke('get_full_config');
       updateConfigDisplay(config);
+
+      // Initialize camera preview toggle
+      initializeCameraPreviewToggle(config);
     } catch (error) {
       console.error('Failed to load config:', error);
       const errorMsg =
@@ -591,6 +595,53 @@ function updateConfigDisplay(config: config) {
     const rawValue = (config as any)[key];
     element.textContent = transform ? transform(rawValue) : String(rawValue);
   });
+
+  // Update camera preview toggle separately
+  updateCameraPreviewToggle(config.camera_preview_enabled);
+}
+
+function initializeCameraPreviewToggle(config: config) {
+  const toggleBtn = document.getElementById('camera-preview-toggle');
+  if (!toggleBtn) return;
+
+  // Set initial state
+  updateCameraPreviewToggle(config.camera_preview_enabled);
+
+  // Add click handler
+  toggleBtn.addEventListener('click', async () => {
+    try {
+      const newValue = !config.camera_preview_enabled;
+      await invoke('set_camera_preview_enabled', { enabled: newValue });
+
+      // Reload config to get updated value
+      const updatedConfig: config = await invoke('get_full_config');
+      updateCameraPreviewToggle(updatedConfig.camera_preview_enabled);
+
+      // Update camera video display based on new setting
+      updateCameraVideoDisplay(updatedConfig.camera_preview_enabled);
+
+      soundManager.playBeep(700, 120);
+    } catch (error) {
+      console.error('Failed to toggle camera preview:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Failed to toggle camera preview';
+      errorHandler.handleApplicationError('config', errorMsg, 'medium');
+    }
+  });
+}
+
+function updateCameraPreviewToggle(enabled: boolean) {
+  const toggleBtn = document.getElementById('camera-preview-toggle');
+  const toggleText = document.getElementById('camera-preview-toggle-text');
+
+  if (toggleBtn && toggleText) {
+    if (enabled) {
+      toggleBtn.classList.add('enabled');
+      toggleText.textContent = 'Enabled';
+    } else {
+      toggleBtn.classList.remove('enabled');
+      toggleText.textContent = 'Disabled';
+    }
+  }
 }
 
 // Shared reset function for consistent messaging
@@ -652,27 +703,33 @@ async function scheduleHeartbeat() {
 }
 
 /**
- * Initialize camera video display (debug/dev mode only)
+ * Initialize camera video display based on config setting
  */
-function initializeCameraVideo() {
-  // Check if we're in debug/dev mode
-  let isDev = false;
+async function initializeCameraVideo() {
   try {
-    const env = (import.meta as { env?: { DEV?: boolean; MODE?: string } }).env;
-    isDev = env?.DEV === true || env?.MODE === 'development';
-  } catch {
-    isDev = false;
+    const config: config = await invoke('get_full_config');
+    updateCameraVideoDisplay(config.camera_preview_enabled);
+  } catch (error) {
+    console.error('Failed to load config for camera video:', error);
+    // Default to hidden if config can't be loaded
+    updateCameraVideoDisplay(false);
   }
+}
 
-  if (!isDev) {
-    // Production mode - don't show video
-    return;
-  }
-
+/**
+ * Update camera video display based on enabled setting
+ */
+function updateCameraVideoDisplay(enabled: boolean) {
   const videoContainer = document.getElementById('camera-video-container');
   const videoStream = document.getElementById('camera-video-stream') as HTMLImageElement;
 
   if (!videoContainer || !videoStream) {
+    return;
+  }
+
+  if (!enabled) {
+    // Hide the container
+    videoContainer.style.display = 'none';
     return;
   }
 
@@ -705,7 +762,7 @@ function initializeCameraVideo() {
     videoContainer.style.display = 'none';
   };
 
-  console.log('[CameraVideo] Video stream initialized (debug mode)');
+  console.log('[CameraVideo] Video stream initialized');
 }
 
 (async () => {
@@ -721,8 +778,8 @@ function initializeCameraVideo() {
   initializeManualEntry(); // Initialize manual entry functionality
   initializeConfig(); // Initialize config modal functionality
 
-  // Initialize camera video display (debug/dev mode only)
-  initializeCameraVideo();
+  // Initialize camera video display (based on config setting)
+  await initializeCameraVideo();
 
   // Heartbeat cron task: every 10 +/- 5 minutes
   scheduleHeartbeat();

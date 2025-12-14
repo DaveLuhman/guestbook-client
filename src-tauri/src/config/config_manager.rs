@@ -14,6 +14,7 @@ pub struct Config {
     pub device_location: Option<String>,
     pub device_friendly_name: Option<String>,
     pub first_run: bool,
+    pub camera_preview_enabled: bool,
 }
 
 impl Default for Config {
@@ -25,6 +26,7 @@ impl Default for Config {
             device_location: None,
             device_friendly_name: None,
             first_run: true,
+            camera_preview_enabled: false,
         }
     }
 }
@@ -92,6 +94,7 @@ impl ConfigManager {
                 default.device_friendly_name = Some(device_friendly_name);
             }
             default.first_run = cfg.first_run;
+            default.camera_preview_enabled = cfg.camera_preview_enabled;
         }
         default
     }
@@ -125,6 +128,10 @@ impl ConfigManager {
     pub fn set_first_run(&self, first_run: bool) {
         self.set(first_run, |c, v| c.first_run = v);
     }
+
+    pub fn set_camera_preview_enabled(&self, enabled: bool) {
+        self.set(enabled, |c, v| c.camera_preview_enabled = v);
+    }
 }
 
 // Optionally, you can provide a global singleton instance using lazy_static or once_cell
@@ -133,4 +140,13 @@ impl ConfigManager {
 pub fn get_full_config(config_manager: State<'_, ConfigManager>) -> Config {
     let config = config_manager.config.lock().unwrap().clone();
     config
+}
+
+#[tauri::command]
+pub fn set_camera_preview_enabled(
+    enabled: bool,
+    config_manager: State<'_, ConfigManager>,
+) -> Result<(), String> {
+    config_manager.set_camera_preview_enabled(enabled);
+    Ok(())
 }

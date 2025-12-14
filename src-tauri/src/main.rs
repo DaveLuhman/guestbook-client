@@ -11,7 +11,7 @@ mod debug_logging;
 #[cfg(debug_assertions)]
 mod debug_server;
 use api::devices::{register_device, send_heartbeat, reset_device};
-use config::config_manager::{get_full_config, ConfigManager};
+use config::config_manager::{get_full_config, set_camera_preview_enabled, ConfigManager};
 use devices::barcode::{listen_to_barcode, open_symbol_scanner};
 use devices::magtek::{listen_to_magtek, open_magtek_reader};
 use hid::manager::{HIDManager, DeviceConnectionState};
@@ -645,6 +645,7 @@ fn main() {
             test_device_detection,
             first_run_trigger,
             get_full_config,
+            set_camera_preview_enabled,
             submit_first_run_config,
             send_heartbeat_command,
             log_error,
