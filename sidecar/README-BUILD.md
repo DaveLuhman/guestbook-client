@@ -5,7 +5,7 @@ This directory contains scripts to build a standalone binary of the camera sidec
 ## Prerequisites
 
 ```bash
-pip3 install pyinstaller
+apt-get install python3-pyinstaller
 ```
 
 ## Building
@@ -19,7 +19,7 @@ cd sidecar
 
 Or manually:
 ```bash
-pyinstaller camera_sidecar.spec
+python3 -m PyInstaller camera_sidecar.spec
 ```
 
 ### Option 2: Using command-line flags
@@ -27,7 +27,7 @@ pyinstaller camera_sidecar.spec
 If the spec file doesn't work, try this more explicit approach:
 
 ```bash
-pyinstaller \
+python3 -m PyInstaller \
     --onefile \
     --name camera_sidecar \
     --hidden-import av.bytesource \

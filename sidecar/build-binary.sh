@@ -9,10 +9,10 @@ cd "${SCRIPT_DIR}"
 
 echo "==> Building camera_sidecar binary with PyInstaller..."
 
-# Check if PyInstaller is installed
-if ! command -v pyinstaller &> /dev/null; then
+# Check if PyInstaller is available via python3 -m
+if ! python3 -m PyInstaller --version &> /dev/null; then
     echo "Error: PyInstaller is not installed"
-    echo "Install it with: pip3 install pyinstaller"
+    echo "Install it with: apt-get install python3-pyinstaller"
     exit 1
 fi
 
@@ -22,7 +22,7 @@ rm -rf build/ dist/ *.spec.bak 2>/dev/null || true
 
 # Build using the spec file
 echo " + Running PyInstaller..."
-pyinstaller camera_sidecar.spec
+python3 -m PyInstaller camera_sidecar.spec
 
 if [[ -f "dist/camera_sidecar" ]]; then
     echo ""

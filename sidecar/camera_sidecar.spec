@@ -9,7 +9,7 @@ This spec file handles the complex dependencies including:
 - pyzbar
 
 Usage:
-    pyinstaller camera_sidecar.spec
+    python3 -m PyInstaller camera_sidecar.spec
 """
 
 import os
