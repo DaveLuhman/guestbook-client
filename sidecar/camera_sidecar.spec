@@ -81,10 +81,13 @@ hiddenimports = [
     'PIL.Image',
 ]
 
-# Collect submodules for av
+# Collect submodules for av (handle errors gracefully)
 try:
-    hiddenimports += collect_submodules('av')
-except:
+    av_modules = collect_submodules('av')
+    hiddenimports += av_modules
+except Exception as e:
+    # If collection fails, the explicit hiddenimports above should cover essentials
+    print(f"Warning: Could not collect all av submodules: {e}")
     pass
 
 # Additional av imports that are often missed
@@ -101,10 +104,27 @@ hiddenimports += [
     'av.packet',
 ]
 
-# Collect submodules for picamera2
+# Collect submodules for picamera2 (excluding optional dependencies)
 try:
-    hiddenimports += collect_submodules('picamera2')
-except:
+    # Collect picamera2 submodules, but handle missing optional dependencies gracefully
+    picamera2_modules = collect_submodules('picamera2')
+    # Filter out modules that require optional dependencies
+    filtered_modules = []
+    for mod in picamera2_modules:
+        # Skip picamera2.devices if Imath is not available (optional HDR support)
+        if mod == 'picamera2.devices':
+            try:
+                import Imath
+                filtered_modules.append(mod)
+            except ImportError:
+                # Imath is optional - skip this module
+                pass
+        else:
+            filtered_modules.append(mod)
+    hiddenimports += filtered_modules
+except Exception as e:
+    # If collection fails, at least include the essential modules
+    print(f"Warning: Could not collect all picamera2 submodules: {e}")
     pass
 
 a = Analysis(
@@ -116,7 +136,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['Imath'],  # Exclude optional Imath dependency (OpenEXR) - not needed for camera sidecar
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
