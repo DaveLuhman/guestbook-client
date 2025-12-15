@@ -51,7 +51,8 @@
     ],
     "resources": [
       "../public/firstRun.html",
-      "../public/styles.css"
+      "../public/styles.css",
+      "../sidecar/camera_sidecar"
     ],
     "linux": {
       "deb": {

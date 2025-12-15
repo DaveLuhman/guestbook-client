@@ -437,6 +437,7 @@ async fn get_camera_sidecar_status(
 
 #[tauri::command]
 async fn start_camera_sidecar(
+    app: tauri::AppHandle,
     scanner: tauri::State<'_, ScannerProc>,
     scanner_error: tauri::State<'_, ScannerError>,
 ) -> Result<(), String> {
@@ -456,46 +457,77 @@ async fn start_camera_sidecar(
 
     log::info!("Starting camera sidecar...");
 
-    // Find the Python script path
-    // Try multiple possible locations relative to current working directory
-    let script_paths = vec![
-        // Development path (when running from project root)
-        PathBuf::from("sidecar/camera_sidecar.py"),
-        // Development path (when running from src-tauri/)
-        PathBuf::from("../sidecar/camera_sidecar.py"),
-        // Alternative development path
-        PathBuf::from("../../sidecar/camera_sidecar.py"),
-        // System installation path
-        PathBuf::from("/usr/share/guestbook-kiosk/sidecar/camera_sidecar.py"),
-    ];
+    // Find the camera sidecar binary/script
+    // Priority order:
+    // 1. Bundled binary in AppImage resources (production)
+    // 2. Development paths (Python script)
+    // 3. System installation path
 
     let mut script_path = None;
-    for path in &script_paths {
-        if path.exists() {
-            script_path = Some(path.canonicalize().map_err(|e| {
-                format!("Failed to canonicalize path {:?}: {}", path, e)
-            })?);
-            break;
+
+    // Try to find bundled binary in AppImage resources first
+    // In Tauri, resources are bundled and accessible via the resource directory
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let bundled_binary = resource_dir.join("camera_sidecar");
+        if bundled_binary.exists() && bundled_binary.is_file() {
+            log::info!("Found bundled camera sidecar binary at: {:?}", bundled_binary);
+            script_path = Some(bundled_binary);
+        } else {
+            log::debug!("Bundled binary not found at: {:?}", bundled_binary);
+        }
+    } else {
+        log::debug!("Could not access resource directory (may not be in AppImage)");
+    }
+
+    // If not found in resources, try development paths (Python script)
+    if script_path.is_none() {
+        let script_paths = vec![
+            // Development path (when running from project root)
+            PathBuf::from("sidecar/camera_sidecar.py"),
+            // Development path (when running from src-tauri/)
+            PathBuf::from("../sidecar/camera_sidecar.py"),
+            // Alternative development path
+            PathBuf::from("../../sidecar/camera_sidecar.py"),
+            // System installation path
+            PathBuf::from("/usr/share/guestbook-kiosk/sidecar/camera_sidecar.py"),
+        ];
+
+        for path in &script_paths {
+            if path.exists() {
+                script_path = Some(path.canonicalize().map_err(|e| {
+                    format!("Failed to canonicalize path {:?}: {}", path, e)
+                })?);
+                break;
+            }
         }
     }
 
     let script_path = script_path.ok_or_else(|| {
         format!(
-            "Could not find camera_sidecar.py. Tried: {:?}",
-            script_paths
+            "Could not find camera sidecar binary or script. Checked bundled resources and paths: sidecar/camera_sidecar.py, ../sidecar/camera_sidecar.py, /usr/share/guestbook-kiosk/sidecar/camera_sidecar.py"
         )
     })?;
 
-    log::info!("Found camera sidecar script at: {:?}", script_path);
+    log::info!("Found camera sidecar at: {:?}", script_path);
 
-    // Spawn Python process directly
-    let mut child = Command::new("python3")
-        .arg(&script_path)
+    // Determine if it's a binary or Python script
+    let is_binary = script_path.extension().is_none() || script_path.extension() != Some(std::ffi::OsStr::new("py"));
+
+    // Spawn process - use binary directly or python3 for script
+    let mut child = if is_binary {
+        log::info!("Starting camera sidecar as binary: {:?}", script_path);
+        Command::new(&script_path)
+    } else {
+        log::info!("Starting camera sidecar as Python script: {:?}", script_path);
+        let mut cmd = Command::new("python3");
+        cmd.arg(&script_path);
+        cmd
+    }
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("Failed to spawn camera sidecar: {} (script: {:?})", e, script_path))?;
+        .map_err(|e| format!("Failed to spawn camera sidecar: {} (path: {:?})", e, script_path))?;
 
     // Capture stderr for logging and error tracking
     // Clear previous error
