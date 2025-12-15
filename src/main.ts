@@ -582,6 +582,10 @@ const configFieldMap: Record<keyof config, {
     id: 'config-first-run',
     transform: (v: boolean) => v ? 'Yes' : 'No'
   },
+  camera_preview_enabled: {
+    id: 'config-camera-preview-enabled',
+    transform: (v: boolean) => v ? 'Yes' : 'No'
+  },
 };
 
 function updateConfigDisplay(config: config) {
