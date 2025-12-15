@@ -1,4 +1,4 @@
-use crate::config::config_manager::{get_full_config, ConfigManager};
+use crate::config::config_manager::ConfigManager;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::json; // Add this import for the `json!` macro
@@ -13,7 +13,7 @@ pub async fn submit_entry(
     config_manager: tauri::State<'_, ConfigManager>,
     card_data: CardData,
 ) -> Result<(), String> {
-    let config = get_full_config(config_manager.clone());
+    let config = config_manager.get_config()?;
 
     // Validate required configuration fields
     let server_url = config.server_url.clone()

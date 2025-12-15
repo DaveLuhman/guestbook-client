@@ -184,13 +184,14 @@ async fn submit_first_run_config(
     device_location: String,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    let mut config = get_full_config(config_manager.clone());
+    let mut config = config_manager.get_config()?;
     config.device_friendly_name = Some(device_name);
     config.device_location = Some(device_location);
     config.first_run = false;
     // Save config
     {
-        let mut lock = config_manager.config.lock().unwrap();
+        let mut lock = config_manager.config.lock()
+            .map_err(|e| format!("Failed to acquire config lock: {}", e))?;
         *lock = config.clone();
     }
     config_manager.save_config().map_err(|e| e.to_string())?;
