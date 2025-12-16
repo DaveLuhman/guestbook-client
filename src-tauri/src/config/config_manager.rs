@@ -14,6 +14,7 @@ pub struct Config {
     pub device_location: Option<String>,
     pub device_friendly_name: Option<String>,
     pub first_run: bool,
+    #[serde(default)]
     pub camera_preview_enabled: bool,
 }
 
