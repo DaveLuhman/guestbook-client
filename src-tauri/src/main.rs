@@ -196,7 +196,7 @@ async fn submit_barcode_entry(
     }
     // #endregion
     let name = "Barcode".to_string();
-    let result = submit_entry(config_manager, CardData { name, onecard.clone() })
+    let result = submit_entry(config_manager, CardData { name, onecard: onecard.clone() })
         .await
         .map_err(|e| format!("Failed to submit barcode entry: {}", e));
     // #region agent log
