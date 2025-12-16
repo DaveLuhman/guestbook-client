@@ -1,7 +1,7 @@
 use crate::config::device_id::compute_device_id;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use tauri::State;
@@ -53,6 +53,7 @@ impl ConfigManager {
         // Load existing config
         let loaded_config = Self::load_config(&config_path);
         let config_exists = config_path.exists();
+        let config_loaded_successfully = loaded_config.is_some();
 
         // Merge with defaults
         let merged_config = Self::merge_with_default(loaded_config);
@@ -70,7 +71,7 @@ impl ConfigManager {
                 log::error!("Failed to save initial config: {}", e);
                 eprintln!("Error: Failed to save initial config: {}", e);
             }
-        } else if loaded_config.is_some() {
+        } else if config_loaded_successfully {
             // Successfully loaded existing config - save merged version to ensure new fields are added
             if let Err(e) = manager.save_config() {
                 log::error!("Failed to save merged config: {}", e);
