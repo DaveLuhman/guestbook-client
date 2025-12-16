@@ -13,6 +13,21 @@ pub async fn submit_entry(
     config_manager: tauri::State<'_, ConfigManager>,
     card_data: CardData,
 ) -> Result<(), String> {
+    // #region agent log
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(".cursor/debug.log") {
+        use std::io::Write;
+        let log_entry = serde_json::json!({
+            "location": "entries.rs:12",
+            "message": "submit_entry entry",
+            "data": {"onecard": card_data.onecard},
+            "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis(),
+            "sessionId": "debug-session",
+            "runId": "run1",
+            "hypothesisId": "M"
+        });
+        let _ = writeln!(file, "{}", serde_json::to_string(&log_entry).unwrap_or_default());
+    }
+    // #endregion
     let config = config_manager.get_config()?;
 
     // Validate required configuration fields
@@ -23,6 +38,22 @@ pub async fn submit_entry(
 
     let submit_url = format!("{}/entries/submit", server_url);
 
+    // #region agent log
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(".cursor/debug.log") {
+        use std::io::Write;
+        let log_entry = serde_json::json!({
+            "location": "entries.rs:24",
+            "message": "About to create HTTP client and send request",
+            "data": {"onecard": card_data.onecard, "submit_url": submit_url},
+            "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis(),
+            "sessionId": "debug-session",
+            "runId": "run1",
+            "hypothesisId": "N"
+        });
+        let _ = writeln!(file, "{}", serde_json::to_string(&log_entry).unwrap_or_default());
+    }
+    // #endregion
+
     // Create client with timeout configuration (10 seconds)
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
@@ -31,6 +62,21 @@ pub async fn submit_entry(
 
     log::info!("Submitting entry for onecard: {}", card_data.onecard);
 
+    // #region agent log
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(".cursor/debug.log") {
+        use std::io::Write;
+        let log_entry = serde_json::json!({
+            "location": "entries.rs:49",
+            "message": "About to await HTTP send",
+            "data": {"onecard": card_data.onecard},
+            "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis(),
+            "sessionId": "debug-session",
+            "runId": "run1",
+            "hypothesisId": "O"
+        });
+        let _ = writeln!(file, "{}", serde_json::to_string(&log_entry).unwrap_or_default());
+    }
+    // #endregion
     let response = client
         .post(&submit_url)
         .header("Content-Type", "application/json")
@@ -51,8 +97,40 @@ pub async fn submit_entry(
 
     // Handle network errors (connection failures, timeouts, etc.)
     let response = match response {
-        Ok(r) => r,
+        Ok(r) => {
+            // #region agent log
+            if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(".cursor/debug.log") {
+                use std::io::Write;
+                let log_entry = serde_json::json!({
+                    "location": "entries.rs:53",
+                    "message": "HTTP response received",
+                    "data": {"onecard": card_data.onecard, "status": r.status().as_u16()},
+                    "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis(),
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "P"
+                });
+                let _ = writeln!(file, "{}", serde_json::to_string(&log_entry).unwrap_or_default());
+            }
+            // #endregion
+            r
+        },
         Err(e) => {
+            // #region agent log
+            if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(".cursor/debug.log") {
+                use std::io::Write;
+                let log_entry = serde_json::json!({
+                    "location": "entries.rs:55",
+                    "message": "HTTP request failed",
+                    "data": {"onecard": card_data.onecard, "error": format!("{}", e)},
+                    "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis(),
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "Q"
+                });
+                let _ = writeln!(file, "{}", serde_json::to_string(&log_entry).unwrap_or_default());
+            }
+            // #endregion
             let error_msg = if e.is_timeout() {
                 "Request Timeout - Please check network connection".to_string()
             } else if e.is_connect() {
@@ -67,6 +145,21 @@ pub async fn submit_entry(
 
     // Check HTTP status code
     let status = response.status();
+    // #region agent log
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(".cursor/debug.log") {
+        use std::io::Write;
+        let log_entry = serde_json::json!({
+            "location": "entries.rs:69",
+            "message": "Checking HTTP status",
+            "data": {"onecard": card_data.onecard, "status": status.as_u16(), "is_success": status.is_success()},
+            "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis(),
+            "sessionId": "debug-session",
+            "runId": "run1",
+            "hypothesisId": "R"
+        });
+        let _ = writeln!(file, "{}", serde_json::to_string(&log_entry).unwrap_or_default());
+    }
+    // #endregion
     if !status.is_success() {
         // Try to extract error details from response body
         let error_body = response.text().await.unwrap_or_default();
@@ -97,6 +190,21 @@ pub async fn submit_entry(
 
     // Success - read response body (optional, but good for logging)
     let _body = response.text().await.unwrap_or_default();
+    // #region agent log
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(".cursor/debug.log") {
+        use std::io::Write;
+        let log_entry = serde_json::json!({
+            "location": "entries.rs:100",
+            "message": "Entry submitted successfully",
+            "data": {"onecard": card_data.onecard},
+            "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis(),
+            "sessionId": "debug-session",
+            "runId": "run1",
+            "hypothesisId": "S"
+        });
+        let _ = writeln!(file, "{}", serde_json::to_string(&log_entry).unwrap_or_default());
+    }
+    // #endregion
     log::info!("Entry submitted successfully for onecard: {}", card_data.onecard);
     println!("{}{}", card_data.onecard, Utc::now().to_rfc3339());
     Ok(())
