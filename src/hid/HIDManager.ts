@@ -74,32 +74,19 @@ export async function startHIDManager() {
   // Listen for camera barcode events (custom window events)
   window.addEventListener('camera-barcode-data', ((event: CustomEvent) => {
     const onecard = event.detail?.payload;
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/043b8008-fbe8-42a6-b0ea-d57d396bf9fc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HIDManager.ts:75',message:'camera-barcode-data event received',data:{onecard,hasPayload:!!event.detail?.payload},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
     if (onecard && typeof onecard === 'string') {
       // Process the same way as Tauri barcode-data events
       processBarcodeData(onecard);
-    } else {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/043b8008-fbe8-42a6-b0ea-d57d396bf9fc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HIDManager.ts:79',message:'Invalid onecard in event, not calling processBarcodeData',data:{onecard,type:typeof onecard},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
     }
   }) as EventListener);
 
   // Shared barcode processing function for both Tauri events and camera events
   async function processBarcodeData(onecard: string) {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/043b8008-fbe8-42a6-b0ea-d57d396bf9fc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HIDManager.ts:84',message:'processBarcodeData entry',data:{onecard},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
     try {
       console.log('Barcode scanned:', onecard);
       // Validate onecard format (7 digits)
       if (!/^\d{7}$/.test(onecard)) {
         console.error('Invalid barcode payload:', onecard);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/043b8008-fbe8-42a6-b0ea-d57d396bf9fc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HIDManager.ts:88',message:'Invalid barcode format, returning early',data:{onecard},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
         // Play error sound for bad read/scan
         soundManager.playError();
         errorHandler.handleApplicationError(
@@ -111,27 +98,15 @@ export async function startHIDManager() {
         return;
       }
       updateScanData(onecard); // Show scanned value to user
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/043b8008-fbe8-42a6-b0ea-d57d396bf9fc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HIDManager.ts:100',message:'About to call invoke submit_barcode_entry',data:{onecard},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
       // Submit immediately without blocking - handle response asynchronously
       // This improves responsiveness by not waiting for HTTP response before showing feedback
       invoke('submit_barcode_entry', { onecard })
         .then(() => {
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/043b8008-fbe8-42a6-b0ea-d57d396bf9fc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HIDManager.ts:104',message:'invoke submit_barcode_entry resolved successfully',data:{onecard},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-          // #endregion
           // Success - HTTP request completed with 2xx status
           soundManager.playSuccess();
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/043b8008-fbe8-42a6-b0ea-d57d396bf9fc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HIDManager.ts:107',message:'About to call showEntrySuccess',data:{onecard},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-          // #endregion
           showEntrySuccess();
         })
         .catch((error) => {
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/043b8008-fbe8-42a6-b0ea-d57d396bf9fc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HIDManager.ts:109',message:'invoke submit_barcode_entry rejected',data:{onecard,error:String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-          // #endregion
           // Error - non-2xx HTTP response or network error
           console.error('Submit error:', error);
           soundManager.playError();
@@ -149,9 +124,6 @@ export async function startHIDManager() {
         });
       // Don't await - return immediately to allow UI to be responsive
     } catch (error) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/043b8008-fbe8-42a6-b0ea-d57d396bf9fc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HIDManager.ts:126',message:'processBarcodeData catch block executed',data:{onecard,error:String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
-      // #endregion
       // This catch block handles synchronous errors (validation, etc.)
       console.error('Process barcode error:', error);
       soundManager.playError();

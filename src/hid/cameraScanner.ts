@@ -95,10 +95,6 @@ function handleScanEvent(scan: ScanEvent): void {
   const barcodeText = scan.code;
   console.log('[CameraScanner] Barcode detected from sidecar:', barcodeText, 'Raw scan:', scan);
 
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/043b8008-fbe8-42a6-b0ea-d57d396bf9fc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'cameraScanner.ts:94',message:'handleScanEvent entry',data:{barcodeText:scan.code},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-  // #endregion
-
   // Parse barcode format ^1234567^ to extract OneCard number
   // Also handle plain numeric codes (7 digits) as fallback
   let onecard: string | null = null;
@@ -111,17 +107,11 @@ function handleScanEvent(scan: ScanEvent): void {
     console.log('[CameraScanner] Using plain numeric format:', onecard);
   } else {
     console.warn('[CameraScanner] Barcode format not recognized:', barcodeText, 'Expected format: ^1234567^ or 1234567');
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/043b8008-fbe8-42a6-b0ea-d57d396bf9fc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'cameraScanner.ts:110',message:'Barcode format not recognized, returning early',data:{barcodeText},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     return;
   }
 
   if (!onecard) {
     console.error('[CameraScanner] Failed to extract OneCard number from:', barcodeText);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/043b8008-fbe8-42a6-b0ea-d57d396bf9fc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'cameraScanner.ts:114',message:'Failed to extract onecard, returning early',data:{barcodeText},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     return;
   }
 
@@ -132,10 +122,6 @@ function handleScanEvent(scan: ScanEvent): void {
     detail: { payload: onecard },
   });
   window.dispatchEvent(event);
-
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/043b8008-fbe8-42a6-b0ea-d57d396bf9fc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'cameraScanner.ts:124',message:'Emitted camera-barcode-data event',data:{onecard},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-  // #endregion
 
   console.log('Emitted camera-barcode-data event with onecard:', onecard);
 }

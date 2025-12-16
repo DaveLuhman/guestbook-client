@@ -660,9 +660,6 @@ function resetEntryDisplay() {
 }
 
 export function showEntrySuccess() {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/043b8008-fbe8-42a6-b0ea-d57d396bf9fc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'main.ts:662',message:'showEntrySuccess called',data:{stack:new Error().stack},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
-  // #endregion
   // Update the main display to show success
   const entryData = document.getElementById('entry-data');
   if (entryData) {

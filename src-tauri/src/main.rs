@@ -24,7 +24,6 @@ use std::sync::{Arc, Mutex};
 use std::process::{Command, Child, Stdio};
 use std::path::PathBuf;
 use std::io::{BufRead, BufReader};
-use serde_json;
 
 #[tauri::command]
 fn get_hid_devices() -> Vec<String> {
@@ -133,41 +132,11 @@ async fn submit_barcode_entry(
     last_scanned_id: tauri::State<'_, LastScannedId>,
     onecard: String,
 ) -> Result<(), String> {
-    // #region agent log
-    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(".cursor/debug.log") {
-        use std::io::Write;
-        let log_entry = serde_json::json!({
-            "location": "main.rs:130",
-            "message": "submit_barcode_entry entry",
-            "data": {"onecard": onecard},
-            "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis(),
-            "sessionId": "debug-session",
-            "runId": "run1",
-            "hypothesisId": "I"
-        });
-        let _ = writeln!(file, "{}", serde_json::to_string(&log_entry).unwrap_or_default());
-    }
-    // #endregion
     // Debounce: ignore if this is the same ID as the most recently scanned
     {
         let last_id = last_scanned_id.0.lock().unwrap();
         if let Some(ref last) = *last_id {
             if last == &onecard {
-                // #region agent log
-                if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(".cursor/debug.log") {
-                    use std::io::Write;
-                    let log_entry = serde_json::json!({
-                        "location": "main.rs:140",
-                        "message": "Debounce: returning early",
-                        "data": {"onecard": onecard, "last": last},
-                        "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis(),
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "J"
-                    });
-                    let _ = writeln!(file, "{}", serde_json::to_string(&log_entry).unwrap_or_default());
-                }
-                // #endregion
                 log::debug!("Ignoring duplicate scan (debounce): {}", onecard);
                 return Ok(()); // Return success silently for duplicates
             }
@@ -180,42 +149,10 @@ async fn submit_barcode_entry(
         *last_id = Some(onecard.clone());
     }
 
-    // #region agent log
-    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(".cursor/debug.log") {
-        use std::io::Write;
-        let log_entry = serde_json::json!({
-            "location": "main.rs:153",
-            "message": "About to call submit_entry",
-            "data": {"onecard": onecard},
-            "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis(),
-            "sessionId": "debug-session",
-            "runId": "run1",
-            "hypothesisId": "K"
-        });
-        let _ = writeln!(file, "{}", serde_json::to_string(&log_entry).unwrap_or_default());
-    }
-    // #endregion
     let name = "Barcode".to_string();
-    let result = submit_entry(config_manager, CardData { name, onecard: onecard.clone() })
+    submit_entry(config_manager, CardData { name, onecard })
         .await
-        .map_err(|e| format!("Failed to submit barcode entry: {}", e));
-    // #region agent log
-    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(".cursor/debug.log") {
-        use std::io::Write;
-        let is_ok = result.is_ok();
-        let log_entry = serde_json::json!({
-            "location": "main.rs:156",
-            "message": "submit_entry returned",
-            "data": {"onecard": onecard, "is_ok": is_ok},
-            "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis(),
-            "sessionId": "debug-session",
-            "runId": "run1",
-            "hypothesisId": "L"
-        });
-        let _ = writeln!(file, "{}", serde_json::to_string(&log_entry).unwrap_or_default());
-    }
-    // #endregion
-    result?;
+        .map_err(|e| format!("Failed to submit barcode entry: {}", e))?;
     Ok(())
 }
 
