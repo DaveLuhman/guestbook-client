@@ -1,4 +1,4 @@
-use crate::config::config_manager::ConfigManager;
+use crate::config::config_manager::{get_full_config, ConfigManager};
 use chrono::Utc;
 use serde_json::json;
 use tauri_plugin_http::reqwest; // Add this import for the `json!` macro
@@ -6,7 +6,7 @@ use tauri_plugin_http::reqwest; // Add this import for the `json!` macro
 pub async fn register_device(
     config_manager: tauri::State<'_, ConfigManager>,
 ) -> Result<(), String> {
-    let config = config_manager.get_config()?;
+    let config = get_full_config(config_manager.clone());
     let register_url = format!("{}/devices/register", config.server_url.clone().unwrap());
     let request_body = json!({
         "name": config.device_friendly_name,
@@ -54,7 +54,7 @@ pub async fn register_device(
 pub async fn reset_device(
     config_manager: tauri::State<'_, ConfigManager>,
 ) -> Result<(), String> {
-    let config = config_manager.get_config()?;
+    let config = get_full_config(config_manager.clone());
     let device_id = config.device_id.clone().unwrap();
     let server_url = config.server_url.clone().unwrap();
     let server_token = config.server_token.clone().unwrap();
@@ -92,7 +92,7 @@ pub async fn reset_device(
 }
 
 pub async fn send_heartbeat(config_manager: tauri::State<'_, ConfigManager>) -> Result<(), String> {
-    let config = config_manager.get_config()?;
+    let config = get_full_config(config_manager.clone());
     let device_id = config.device_id.clone().unwrap();
     let heartbeat_url = format!(
         "{}/devices/heartbeat/{}",
