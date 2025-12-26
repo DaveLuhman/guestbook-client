@@ -1,6 +1,7 @@
 use crate::config::config_manager::ConfigManager;
 use chrono::Utc;
 use serde_json::json;
+use std::time::Duration;
 use tauri_plugin_http::reqwest; // Add this import for the `json!` macro
 
 pub async fn register_device(
@@ -122,4 +123,69 @@ pub async fn send_heartbeat(config_manager: tauri::State<'_, ConfigManager>) -> 
         return Err(format!("Heartbeat failed: status {}: {}", status, body));
     }
     Ok(())
+}
+
+/// Lightweight network availability check using the heartbeat endpoint with a short timeout.
+pub async fn check_network_availability(
+    config_manager: tauri::State<'_, ConfigManager>,
+) -> Result<bool, String> {
+    let config = config_manager.get_config()?;
+
+    let server_url = config.server_url.clone().ok_or_else(|| {
+        "Server URL not configured. Please configure the server URL in settings.".to_string()
+    })?;
+
+    let device_id = config.device_id.clone().ok_or_else(|| {
+        "Device ID not configured. Please re-enroll this device.".to_string()
+    })?;
+
+    let server_token = config.server_token.clone().ok_or_else(|| {
+        "Server token not configured. Please configure the server token in settings.".to_string()
+    })?;
+
+    let heartbeat_url = format!("{}/devices/heartbeat/{}", server_url, device_id);
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client for network check: {}", e))?;
+
+    log::debug!("Performing network availability check to {}", heartbeat_url);
+
+    let response = client
+        .get(heartbeat_url)
+        .header("Content-Type", "application/json")
+        .header("Authorization", format!("Bearer {}", server_token))
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                Ok(true)
+            } else {
+                let status = resp.status();
+                let body = resp
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "<no body>".to_string());
+                log::warn!(
+                    "Network availability check failed: status {}: {}",
+                    status,
+                    body
+                );
+                Ok(false)
+            }
+        }
+        Err(e) => {
+            if e.is_timeout() {
+                log::warn!("Network availability check timed out: {}", e);
+            } else if e.is_connect() {
+                log::warn!("Network availability check connection error: {}", e);
+            } else {
+                log::warn!("Network availability check error: {}", e);
+            }
+            Ok(false)
+        }
+    }
 }

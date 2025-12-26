@@ -65,6 +65,12 @@ body {
   transition: background-color 0.3s ease;
 }
 
+/* Network unavailable warning state */
+.network-unavailable-state {
+  background-color: #ffcc00 !important;
+  transition: background-color 0.3s ease;
+}
+
 /* Grid container for 3-row layout */
 .grid-container {
   display: grid;

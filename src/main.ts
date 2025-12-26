@@ -656,7 +656,11 @@ function resetEntryDisplay() {
       '<p>Swipe your card or scan your barcode to record an entry...</p>';
   }
   // Remove any state classes from body
-  document.body.classList.remove('success-state', 'error-state');
+  document.body.classList.remove(
+    'success-state',
+    'error-state',
+    'network-unavailable-state'
+  );
 }
 
 export function showEntrySuccess() {
@@ -704,6 +708,67 @@ async function scheduleHeartbeat() {
     }
     scheduleHeartbeat(); // Schedule next heartbeat
   }, interval);
+}
+
+/**
+ * Background network monitoring to detect API availability issues.
+ * When the network is unavailable, the background turns yellow and
+ * a warning message is displayed to the user.
+ */
+async function startNetworkMonitoring() {
+  let lastKnownAvailable: boolean | null = null;
+
+  const updateNetworkUI = (isAvailable: boolean) => {
+    const entryData = document.getElementById('entry-data');
+
+    if (isAvailable) {
+      // Clear network warning state and restore default display
+      document.body.classList.remove('network-unavailable-state');
+
+      // Only reset to default text if we were previously in a network error state
+      if (lastKnownAvailable === false && entryData) {
+        entryData.innerHTML =
+          '<p>Swipe your card or scan your barcode to record an entry...</p>';
+      }
+    } else {
+      // Apply network warning state
+      document.body.classList.add('network-unavailable-state');
+
+      if (entryData) {
+        entryData.innerHTML =
+          '<p>The network is unavailable and entries cannot be recorded at this time.</p>';
+      }
+    }
+  };
+
+  const performCheck = async () => {
+    try {
+      const isAvailable = await invoke<boolean>(
+        'check_network_availability_command'
+      );
+
+      if (isAvailable !== lastKnownAvailable) {
+        updateNetworkUI(isAvailable);
+        lastKnownAvailable = isAvailable;
+      }
+    } catch (e) {
+      console.error('Network availability check failed', e);
+      const errorMsg =
+        e instanceof Error ? e.message : 'Network availability check failed';
+      errorHandler.handleApplicationError('network', errorMsg, 'medium');
+
+      if (lastKnownAvailable !== false) {
+        updateNetworkUI(false);
+        lastKnownAvailable = false;
+      }
+    }
+  };
+
+  // Initial check
+  await performCheck();
+
+  // Check every 30 seconds
+  setInterval(performCheck, 30 * 1000);
 }
 
 /**
@@ -784,6 +849,9 @@ function updateCameraVideoDisplay(enabled: boolean) {
 
   // Initialize camera video display (based on config setting)
   await initializeCameraVideo();
+
+  // Start background network monitoring
+  await startNetworkMonitoring();
 
   // Heartbeat cron task: every 10 +/- 5 minutes
   scheduleHeartbeat();

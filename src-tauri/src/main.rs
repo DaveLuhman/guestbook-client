@@ -10,7 +10,7 @@ mod logging;
 mod debug_logging;
 #[cfg(debug_assertions)]
 mod debug_server;
-use api::devices::{register_device, send_heartbeat, reset_device};
+use api::devices::{register_device, send_heartbeat, reset_device, check_network_availability};
 use config::config_manager::{get_full_config, set_camera_preview_enabled, ConfigManager};
 use devices::barcode::{listen_to_barcode, open_symbol_scanner};
 use devices::magtek::{listen_to_magtek, open_magtek_reader};
@@ -222,6 +222,14 @@ async fn send_heartbeat_command(
             Err(e)
         }
     }
+}
+
+/// IPC command to perform a lightweight network availability check.
+#[tauri::command]
+async fn check_network_availability_command(
+    config_manager: tauri::State<'_, ConfigManager>,
+) -> Result<bool, String> {
+    check_network_availability(config_manager).await
 }
 
 #[tauri::command]
@@ -681,6 +689,7 @@ fn main() {
             set_camera_preview_enabled,
             submit_first_run_config,
             send_heartbeat_command,
+            check_network_availability_command,
             log_error,
             test_logging,
             restart_appliance,
