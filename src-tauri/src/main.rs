@@ -476,13 +476,34 @@ async fn start_camera_sidecar(
 
     // Try to find bundled binary in AppImage resources first
     // In Tauri, resources are bundled and accessible via the resource directory
+    // Check both root and subdirectory paths since Tauri may preserve directory structure
     if let Ok(resource_dir) = app.path().resource_dir() {
-        let bundled_binary = resource_dir.join("camera_sidecar");
-        if bundled_binary.exists() && bundled_binary.is_file() {
-            log::info!("Found bundled camera sidecar binary at: {:?}", bundled_binary);
-            script_path = Some(bundled_binary);
-        } else {
-            log::debug!("Bundled binary not found at: {:?}", bundled_binary);
+        log::debug!("Resource directory: {:?}", resource_dir);
+        
+        // List contents of resource directory for debugging
+        if let Ok(entries) = std::fs::read_dir(&resource_dir) {
+            let mut resource_files = Vec::new();
+            for entry in entries.flatten() {
+                if let Ok(file_name) = entry.file_name().into_string() {
+                    resource_files.push(file_name);
+                }
+            }
+            log::debug!("Resource directory contents: {:?}", resource_files);
+        }
+        
+        let bundled_paths = vec![
+            resource_dir.join("camera_sidecar"),           // Direct path
+            resource_dir.join("sidecar").join("camera_sidecar"), // Preserved directory structure
+        ];
+        
+        for bundled_binary in &bundled_paths {
+            if bundled_binary.exists() && bundled_binary.is_file() {
+                log::info!("Found bundled camera sidecar binary at: {:?}", bundled_binary);
+                script_path = Some(bundled_binary.clone());
+                break;
+            } else {
+                log::debug!("Bundled binary not found at: {:?}", bundled_binary);
+            }
         }
     } else {
         log::debug!("Could not access resource directory (may not be in AppImage)");

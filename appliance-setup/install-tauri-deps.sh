@@ -267,7 +267,7 @@ else
                     }
                     fi
                 }
-                
+
                 # Try build-binary.sh first if it exists (optional convenience wrapper)
                 if [[ -f "build-binary.sh" ]]; then
                     bash build-binary.sh || {
@@ -285,7 +285,7 @@ else
                         exit 1
                     }
                 fi
-                
+
                 # Copy built binary to expected location
                 if [[ -f "dist/camera_sidecar" ]]; then
                     cp -f "dist/camera_sidecar" "camera_sidecar"
