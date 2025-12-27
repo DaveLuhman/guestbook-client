@@ -44,13 +44,14 @@ APP_PATH="${APP_PATH:-${APP_DIR}/Guestbook.AppImage}"
 UDEV_RULE_PATH="${UDEV_RULE_PATH:-/etc/udev/rules.d/99-hid.rules}"
 
 # Sidecar paths (optional fallback - AppImage includes bundled binary)
-SIDECAR_DIR="${SIDECAR_DIR:-/usr/share/guestbook-kiosk/sidecar}"
+# Note: Rust code checks both /opt/guestbook/sidecar and /usr/share/guestbook-kiosk/sidecar
+SIDECAR_DIR="${SIDECAR_DIR:-/opt/guestbook/sidecar}"
 SIDECAR_SCRIPT="${SIDECAR_SCRIPT:-${SIDECAR_DIR}/camera_sidecar.py}"
 SIDECAR_BINARY="${SIDECAR_BINARY:-${SIDECAR_DIR}/camera_sidecar}"
 
 # Sidecar download URLs (optional - for fallback Python script or binary)
-SIDECAR_SCRIPT_URL="${SIDECAR_SCRIPT_URL:-}"
-SIDECAR_BINARY_URL="${SIDECAR_BINARY_URL:-}"
+SIDECAR_SCRIPT_URL="${SIDECAR_SCRIPT_URL:-https://github.com/DaveLuhman/guestbook-sidecar/archive/refs/tags/v1.0.0.zip}"
+SIDECAR_BINARY_URL="${SIDECAR_BINARY_URL:-https://github.com/DaveLuhman/guestbook-sidecar/releases/download/v1.0.0/camera_sidecar}"
 
 # Where to install the management helper
 MANAGER_URL="${MANAGER_URL:-https://staging.wolfpackguestbook.com/api/guestbook-cli}"
@@ -90,7 +91,7 @@ configure_apt_sources() {
 
     # Add bookworm main sources if not present
     if ! grep -q "deb.*bookworm.*main" /etc/apt/sources.list 2>/dev/null && \
-       ! grep -q "deb.*bookworm.*main" /etc/apt/sources.list.d/*.list 2>/dev/null; then
+    ! grep -q "deb.*bookworm.*main" /etc/apt/sources.list.d/*.list 2>/dev/null; then
         echo "deb http://deb.debian.org/debian bookworm main" >> /etc/apt/sources.list
         echo " + Added bookworm main to sources.list"
     else
@@ -99,7 +100,7 @@ configure_apt_sources() {
 
     # Add bookworm-updates if not present
     if ! grep -q "deb.*bookworm-updates.*main" /etc/apt/sources.list 2>/dev/null && \
-       ! grep -q "deb.*bookworm-updates.*main" /etc/apt/sources.list.d/*.list 2>/dev/null; then
+    ! grep -q "deb.*bookworm-updates.*main" /etc/apt/sources.list.d/*.list 2>/dev/null; then
         echo "deb http://deb.debian.org/debian bookworm-updates main" >> /etc/apt/sources.list
         echo " + Added bookworm-updates to sources.list"
     else
@@ -108,7 +109,7 @@ configure_apt_sources() {
 
     # Add bookworm-security if not present
     if ! grep -q "deb.*bookworm-security.*main" /etc/apt/sources.list 2>/dev/null && \
-       ! grep -q "deb.*bookworm-security.*main" /etc/apt/sources.list.d/*.list 2>/dev/null; then
+    ! grep -q "deb.*bookworm-security.*main" /etc/apt/sources.list.d/*.list 2>/dev/null; then
         echo "deb http://deb.debian.org/debian-security bookworm-security main" >> /etc/apt/sources.list
         echo " + Added bookworm-security to sources.list"
     else
@@ -117,7 +118,7 @@ configure_apt_sources() {
 
     # Add bookworm-backports if not present
     if ! grep -q "deb.*bookworm-backports.*main" /etc/apt/sources.list 2>/dev/null && \
-       ! grep -q "deb.*bookworm-backports.*main" /etc/apt/sources.list.d/*.list 2>/dev/null; then
+    ! grep -q "deb.*bookworm-backports.*main" /etc/apt/sources.list.d/*.list 2>/dev/null; then
         echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/sources.list
         echo " + Added bookworm-backports to sources.list"
     else
@@ -129,24 +130,24 @@ install_dependencies() {
     echo "==> Installing runtime dependencies..."
     apt-get update
     apt-get install -y \
-        curl libfuse2 \
-        libwebkit2gtk-4.1-0 \
-        libstdc++6 libgcc-s1 libatomic1 ca-certificates xdg-utils dbus \
-        xdg-desktop-portal xdg-desktop-portal-gtk \
-        gstreamer1.0-tools gstreamer1.0-alsa \
-        gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
-        gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
-        gstreamer1.0-libav \
-        fonts-dejavu fonts-liberation usbutils \
-        network-manager wpasupplicant \
-        python3 python3-pip python3-dev\
-        libcamera-dev libcamera-tools \
-        libzbar0 zbar-tools python3-pyzbar \
-        python3-opencv \
-        python3-flask \
-        python3-picamera2 \
-        python3-psutil \
-        libatlas-base-dev libgfortran5
+    curl libfuse2 \
+    libwebkit2gtk-4.1-0 \
+    libstdc++6 libgcc-s1 libatomic1 ca-certificates xdg-utils dbus \
+    xdg-desktop-portal xdg-desktop-portal-gtk \
+    gstreamer1.0-tools gstreamer1.0-alsa \
+    gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
+    gstreamer1.0-libav \
+    fonts-dejavu fonts-liberation usbutils \
+    network-manager wpasupplicant \
+    python3 python3-pip python3-dev\
+    libcamera-dev libcamera-tools \
+    libzbar0 zbar-tools python3-pyzbar \
+    python3-opencv \
+    python3-flask \
+    python3-picamera2 \
+    python3-psutil \
+    libatlas-base-dev libgfortran5
 }
 
 configure_env_vars() {
@@ -169,19 +170,19 @@ configure_wifi() {
     if nmcli -t -f NAME connection show | grep -Fxq "${WIFI_SSID}"; then
         echo " + Updating existing connection"
         nmcli connection modify "${WIFI_SSID}" \
-            wifi-sec.key-mgmt wpa-psk \
-            wifi-sec.psk "${WIFI_PSK}" \
-            connection.autoconnect yes
+        wifi-sec.key-mgmt wpa-psk \
+        wifi-sec.psk "${WIFI_PSK}" \
+        connection.autoconnect yes
     else
         echo " + Creating new connection"
         nmcli connection add \
-            type wifi \
-            con-name "${WIFI_SSID}" \
-            ifname wlan0 \
-            ssid "${WIFI_SSID}" \
-            wifi-sec.key-mgmt wpa-psk \
-            wifi-sec.psk "${WIFI_PSK}" \
-            connection.autoconnect yes
+        type wifi \
+        con-name "${WIFI_SSID}" \
+        ifname wlan0 \
+        ssid "${WIFI_SSID}" \
+        wifi-sec.key-mgmt wpa-psk \
+        wifi-sec.psk "${WIFI_PSK}" \
+        connection.autoconnect yes
     fi
 }
 
@@ -246,13 +247,40 @@ install_sidecar() {
     # Download sidecar script if URL is provided
     if [[ -n "${SIDECAR_SCRIPT_URL}" ]]; then
         echo " + Downloading sidecar script from ${SIDECAR_SCRIPT_URL}..."
-        if curl -fsSL "${SIDECAR_SCRIPT_URL}" -o "${SIDECAR_SCRIPT}"; then
-            chmod 755 "${SIDECAR_SCRIPT}"
-            chown root:root "${SIDECAR_SCRIPT}" || true
-            echo " + Sidecar script installed: ${SIDECAR_SCRIPT}"
-            INSTALLED_SOMETHING=1
+        local TEMP_FILE=$(mktemp)
+        if curl -fsSL "${SIDECAR_SCRIPT_URL}" -o "${TEMP_FILE}"; then
+            # Check if downloaded file is a zip archive
+            if file "${TEMP_FILE}" | grep -q "Zip archive"; then
+                echo " + Extracting zip archive..."
+                local TEMP_DIR=$(mktemp -d)
+                if unzip -q "${TEMP_FILE}" -d "${TEMP_DIR}"; then
+                    # Find camera_sidecar.py in extracted directory
+                    local EXTRACTED_SCRIPT=$(find "${TEMP_DIR}" -name "camera_sidecar.py" -type f | head -n 1)
+                    if [[ -n "${EXTRACTED_SCRIPT}" && -f "${EXTRACTED_SCRIPT}" ]]; then
+                        cp -f "${EXTRACTED_SCRIPT}" "${SIDECAR_SCRIPT}"
+                        chmod 755 "${SIDECAR_SCRIPT}"
+                        chown root:root "${SIDECAR_SCRIPT}" || true
+                        echo " + Sidecar script extracted and installed: ${SIDECAR_SCRIPT}"
+                        INSTALLED_SOMETHING=1
+                    else
+                        echo " ! camera_sidecar.py not found in zip archive"
+                    fi
+                else
+                    echo " ! Failed to extract zip archive"
+                fi
+                rm -rf "${TEMP_DIR}"
+            else
+                # Not a zip, treat as direct script download
+                cp -f "${TEMP_FILE}" "${SIDECAR_SCRIPT}"
+                chmod 755 "${SIDECAR_SCRIPT}"
+                chown root:root "${SIDECAR_SCRIPT}" || true
+                echo " + Sidecar script installed: ${SIDECAR_SCRIPT}"
+                INSTALLED_SOMETHING=1
+            fi
+            rm -f "${TEMP_FILE}"
         else
             echo " ! Failed to download sidecar script"
+            rm -f "${TEMP_FILE}"
         fi
     fi
 
@@ -420,7 +448,7 @@ uninstall_service() {
 
 CMD="${1:-install}"
 
-    case "${CMD}" in
+case "${CMD}" in
     install)
         configure_apt_sources
         install_dependencies
@@ -454,13 +482,13 @@ CMD="${1:-install}"
             echo "  - Using AppImage bundled binary only (recommended)"
         fi
         echo ""
-        ;;
+    ;;
     uninstall)
         uninstall_service
         echo "Uninstall complete."
-        ;;
+    ;;
     *)
         echo "Usage: ${0} [install|uninstall]"
         exit 1
-        ;;
+    ;;
 esac

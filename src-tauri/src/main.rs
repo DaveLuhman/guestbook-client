@@ -488,20 +488,21 @@ async fn start_camera_sidecar(
         log::debug!("Could not access resource directory (may not be in AppImage)");
     }
 
-    // If not found in resources, try development paths (Python script)
+    // If not found in resources, try development paths and system installation paths
     if script_path.is_none() {
-        let script_paths = vec![
-            // Development path (when running from project root)
+        let mut search_paths = vec![
+            // Development paths (Python script)
             PathBuf::from("sidecar/camera_sidecar.py"),
-            // Development path (when running from src-tauri/)
             PathBuf::from("../sidecar/camera_sidecar.py"),
-            // Alternative development path
             PathBuf::from("../../sidecar/camera_sidecar.py"),
-            // System installation path
+            // System installation paths - check for binary first, then Python script
+            PathBuf::from("/opt/guestbook/sidecar/camera_sidecar"),
+            PathBuf::from("/opt/guestbook/sidecar/camera_sidecar.py"),
+            PathBuf::from("/usr/share/guestbook-kiosk/sidecar/camera_sidecar"),
             PathBuf::from("/usr/share/guestbook-kiosk/sidecar/camera_sidecar.py"),
         ];
 
-        for path in &script_paths {
+        for path in &search_paths {
             if path.exists() {
                 script_path = Some(path.canonicalize().map_err(|e| {
                     format!("Failed to canonicalize path {:?}: {}", path, e)
@@ -513,7 +514,7 @@ async fn start_camera_sidecar(
 
     let script_path = script_path.ok_or_else(|| {
         format!(
-            "Could not find camera sidecar binary or script. Checked bundled resources and paths: sidecar/camera_sidecar.py, ../sidecar/camera_sidecar.py, /usr/share/guestbook-kiosk/sidecar/camera_sidecar.py"
+            "Could not find camera sidecar binary or script. Checked bundled resources and paths: sidecar/camera_sidecar.py, ../sidecar/camera_sidecar.py, /opt/guestbook/sidecar/camera_sidecar, /usr/share/guestbook-kiosk/sidecar/camera_sidecar.py"
         )
     })?;
 

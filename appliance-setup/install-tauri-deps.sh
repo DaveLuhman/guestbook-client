@@ -156,10 +156,173 @@ else
   echo "⚠️  Skipping linuxdeploy installation due to unsupported architecture"
 fi
 
+# Install Python dependencies for sidecar binary building (if needed)
+echo "🐍 Installing Python dependencies for sidecar binary building..."
+sudo apt install -y \
+  python3 \
+  python3-pip \
+  python3-dev \
+  python3-pyinstaller \
+  libcamera-dev \
+  libavcodec-dev \
+  libavformat-dev \
+  libavutil-dev \
+  libswscale-dev \
+  libzbar0 \
+  zbar-tools \
+  python3-opencv \
+  python3-flask \
+  python3-picamera2 \
+  python3-pyzbar \
+  python3-psutil \
+  libatlas-base-dev \
+  libgfortran5 || {
+  echo "⚠️  Warning: Some Python dependencies failed to install. Sidecar binary building may fail."
+}
+
+# Prepare sidecar binary for AppImage bundling
+echo "📦 Preparing camera sidecar binary for bundling..."
+SIDECAR_BINARY_URL="${SIDECAR_BINARY_URL:-https://github.com/DaveLuhman/guestbook-sidecar/releases/download/v1.0.0/camera_sidecar}"
+SIDECAR_SOURCE_DIR="${SIDECAR_SOURCE_DIR:-sidecar}"
+SIDECAR_BINARY_PATH="${SIDECAR_SOURCE_DIR}/camera_sidecar"
+
+# Ensure sidecar submodule is initialized (if using git)
+if command -v git &> /dev/null && [[ -d ".git" ]]; then
+    if [[ -f ".gitmodules" ]] && grep -q "sidecar" ".gitmodules" 2>/dev/null; then
+        echo " + Checking sidecar submodule..."
+        if [[ ! -f "${SIDECAR_SOURCE_DIR}/camera_sidecar.py" ]]; then
+            echo " + Initializing sidecar submodule..."
+            git submodule update --init --recursive sidecar || {
+                echo "⚠️  Warning: Failed to initialize sidecar submodule"
+            }
+        fi
+    fi
+fi
+
+# Check if sidecar binary already exists
+if [[ -f "${SIDECAR_BINARY_PATH}" && -x "${SIDECAR_BINARY_PATH}" ]]; then
+    echo "✅ Sidecar binary already exists at ${SIDECAR_BINARY_PATH}"
+else
+    echo " + Sidecar binary not found, attempting to download or build..."
+
+    # Try to download pre-built binary first
+    if [[ -n "${SIDECAR_BINARY_URL}" ]]; then
+        echo " + Attempting to download sidecar binary from ${SIDECAR_BINARY_URL}..."
+        mkdir -p "${SIDECAR_SOURCE_DIR}"
+        if curl -fsSL "${SIDECAR_BINARY_URL}" -o "${SIDECAR_BINARY_PATH}"; then
+            chmod +x "${SIDECAR_BINARY_PATH}"
+            echo "✅ Downloaded sidecar binary successfully"
+        else
+            echo " ! Download failed, will attempt to build from source"
+            rm -f "${SIDECAR_BINARY_PATH}"
+        fi
+    fi
+
+    # If download failed or URL not provided, try to build from source
+    if [[ ! -f "${SIDECAR_BINARY_PATH}" ]]; then
+        if [[ -d "${SIDECAR_SOURCE_DIR}" && -f "${SIDECAR_SOURCE_DIR}/camera_sidecar.py" ]]; then
+            echo " + Building sidecar binary from source using PyInstaller..."
+            cd "${SIDECAR_SOURCE_DIR}"
+            if python3 -m PyInstaller --version &> /dev/null; then
+                # Helper function to run PyInstaller with fallback logic
+                run_pyinstaller_build() {
+                    if [[ -f "camera_sidecar.spec" ]]; then
+                        python3 -m PyInstaller camera_sidecar.spec || {
+                            echo "⚠️  PyInstaller spec build failed, trying direct command..."
+                            python3 -m PyInstaller \
+                                --onefile \
+                                --name camera_sidecar \
+                                --hidden-import av.bytesource \
+                                --hidden-import av.buffer \
+                                --hidden-import av.frame \
+                                --hidden-import av.audio.frame \
+                                --hidden-import av.video.frame \
+                                --hidden-import picamera2.encoders \
+                                --hidden-import picamera2.encoders.encoder \
+                                --collect-all av \
+                                --collect-all picamera2 \
+                                --collect-all cv2 \
+                                camera_sidecar.py || {
+                            echo "❌ Failed to build sidecar binary"
+                            return 1
+                        }
+                    }
+                    else
+                        python3 -m PyInstaller \
+                            --onefile \
+                            --name camera_sidecar \
+                            --hidden-import av.bytesource \
+                            --hidden-import av.buffer \
+                            --hidden-import av.frame \
+                            --hidden-import av.audio.frame \
+                            --hidden-import av.video.frame \
+                            --hidden-import picamera2.encoders \
+                            --hidden-import picamera2.encoders.encoder \
+                            --collect-all av \
+                            --collect-all picamera2 \
+                            --collect-all cv2 \
+                            camera_sidecar.py || {
+                        echo "❌ Failed to build sidecar binary"
+                        return 1
+                    }
+                    fi
+                }
+                
+                # Try build-binary.sh first if it exists (optional convenience wrapper)
+                if [[ -f "build-binary.sh" ]]; then
+                    bash build-binary.sh || {
+                        echo "⚠️  build-binary.sh failed, trying PyInstaller directly..."
+                        run_pyinstaller_build || {
+                            cd ..
+                            exit 1
+                        }
+                    }
+                else
+                    # build-binary.sh doesn't exist, use PyInstaller directly
+                    echo " + build-binary.sh not found, using PyInstaller directly..."
+                    run_pyinstaller_build || {
+                        cd ..
+                        exit 1
+                    }
+                fi
+                
+                # Copy built binary to expected location
+                if [[ -f "dist/camera_sidecar" ]]; then
+                    cp -f "dist/camera_sidecar" "camera_sidecar"
+                    chmod +x "camera_sidecar"
+                    echo "✅ Built sidecar binary successfully"
+                else
+                    echo "❌ Built binary not found in dist/ directory"
+                    cd ..
+                    exit 1
+                fi
+            else
+                echo "❌ PyInstaller not available. Install with: apt-get install python3-pyinstaller"
+                cd ..
+                exit 1
+            fi
+            cd ..
+        else
+            echo "⚠️  Sidecar source directory or camera_sidecar.py not found"
+            echo "   The AppImage build will continue, but the sidecar binary won't be bundled."
+            echo "   You can manually place a binary at ${SIDECAR_BINARY_PATH} before building."
+            echo "   Or download it from: ${SIDECAR_BINARY_URL}"
+        fi
+    fi
+fi
+
+echo ""
 echo "✅ Tauri dependencies installation complete!"
 echo ""
 echo "📋 Next steps:"
 echo "1. Run: npm install"
 echo "2. Run: npm run tauri build"
+echo ""
+if [[ -f "${SIDECAR_BINARY_PATH}" ]]; then
+    echo "✅ Sidecar binary ready for bundling: ${SIDECAR_BINARY_PATH}"
+else
+    echo "⚠️  Warning: Sidecar binary not found. AppImage will be built without it."
+    echo "   The sidecar can be installed separately via the setup script."
+fi
 echo ""
 echo "🔗 For more information, visit: https://tauri.app/v1/guides/getting-started/setup/linux"
