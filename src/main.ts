@@ -648,19 +648,29 @@ function updateCameraPreviewToggle(enabled: boolean) {
   }
 }
 
+// Track if entry feedback is currently showing to prevent premature resets
+let isEntryFeedbackShowing = false;
+
 // Shared reset function for consistent messaging
 function resetEntryDisplay() {
   const entryData = document.getElementById('entry-data');
   if (entryData) {
-    entryData.innerHTML =
-      '<p>Swipe your card or scan your barcode to record an entry...</p>';
+    // Only reset to default if network is available
+    // If network is unavailable, keep the warning message
+    const isNetworkUnavailable = document.body.classList.contains('network-unavailable-state');
+    
+    if (!isNetworkUnavailable) {
+      entryData.innerHTML =
+        '<p>Swipe your card or scan your barcode to record an entry...</p>';
+    } else {
+      // Network is down, restore the warning message
+      entryData.innerHTML =
+        '<p>The network is unavailable and entries cannot be recorded at this time.</p>';
+    }
   }
-  // Remove any state classes from body
-  document.body.classList.remove(
-    'success-state',
-    'error-state',
-    'network-unavailable-state'
-  );
+  // Remove success/error state classes, but preserve network-unavailable-state
+  document.body.classList.remove('success-state', 'error-state');
+  isEntryFeedbackShowing = false;
 }
 
 export function showEntrySuccess() {
@@ -670,6 +680,7 @@ export function showEntrySuccess() {
     entryData.innerHTML = '<p>Entry submitted successfully!</p>';
     // Change screen color to green for success using CSS class
     document.body.classList.add('success-state');
+    isEntryFeedbackShowing = true;
     // Reset after 3 seconds
     setTimeout(() => {
       resetEntryDisplay();
@@ -684,6 +695,7 @@ export function showEntryError() {
     entryData.innerHTML = '<p>Error submitting entry. Please try again.</p>';
     // Change screen color to red for error using CSS class
     document.body.classList.add('error-state');
+    isEntryFeedbackShowing = true;
     // Reset after 3 seconds
     setTimeout(() => {
       resetEntryDisplay();
@@ -722,11 +734,13 @@ async function startNetworkMonitoring() {
     const entryData = document.getElementById('entry-data');
 
     if (isAvailable) {
-      // Clear network warning state and restore default display
+      // Clear network warning state
       document.body.classList.remove('network-unavailable-state');
 
-      // Only reset to default text if we were previously in a network error state
-      if (lastKnownAvailable === false && entryData) {
+      // Only reset to default text if:
+      // 1. We were previously in a network error state, AND
+      // 2. Entry feedback is not currently showing (to avoid erasing active feedback)
+      if (lastKnownAvailable === false && entryData && !isEntryFeedbackShowing) {
         entryData.innerHTML =
           '<p>Swipe your card or scan your barcode to record an entry...</p>';
       }
@@ -734,7 +748,9 @@ async function startNetworkMonitoring() {
       // Apply network warning state
       document.body.classList.add('network-unavailable-state');
 
-      if (entryData) {
+      // Only update message if entry feedback is not currently showing
+      // (to avoid erasing active success/error feedback)
+      if (entryData && !isEntryFeedbackShowing) {
         entryData.innerHTML =
           '<p>The network is unavailable and entries cannot be recorded at this time.</p>';
       }

@@ -68,7 +68,17 @@ body {
 /* Network unavailable warning state */
 .network-unavailable-state {
   background-color: #ffcc00 !important;
-  transition: background-color 0.3s ease;
+  color: #000000 !important;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Ensure text is readable on yellow background - black text for better contrast */
+.network-unavailable-state h1,
+.network-unavailable-state p,
+.network-unavailable-state span,
+.network-unavailable-state label {
+  color: #000000 !important;
+  text-shadow: none;
 }
 
 /* Grid container for 3-row layout */
