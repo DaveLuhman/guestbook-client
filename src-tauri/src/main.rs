@@ -547,7 +547,7 @@ async fn start_camera_sidecar(
 
     // If not found in resources, try development paths and system installation paths
     if script_path.is_none() {
-        let mut search_paths = vec![
+        let search_paths = vec![
             // Development paths (Python script)
             PathBuf::from("sidecar/camera_sidecar.py"),
             PathBuf::from("../sidecar/camera_sidecar.py"),
