@@ -133,6 +133,9 @@ configure_apt_sources() {
 install_dependencies() {
     echo "==> Installing runtime dependencies..."
     apt-get update
+
+    # Install base packages first (without zbar and atlas to avoid conflicts)
+    echo "==> Installing base runtime dependencies..."
     apt-get install -y \
     curl libfuse2 \
     libwebkit2gtk-4.1-0 \
@@ -146,12 +149,77 @@ install_dependencies() {
     network-manager wpasupplicant \
     python3 python3-pip python3-dev\
     libcamera-dev libcamera-tools \
-    libzbar0 zbar-tools python3-pyzbar \
     python3-opencv \
     python3-flask \
     python3-picamera2 \
     python3-psutil \
-    libatlas-base-dev libgfortran5
+    libgfortran5
+
+    # Install zbar packages - handle Trixie compatibility
+    # In Trixie, zbar-tools depends on libzbar0t64, not libzbar0
+    echo "==> Installing zbar packages..."
+    if apt-cache show libzbar0t64 &>/dev/null; then
+        # Trixie or newer - install zbar-tools first (pulls in libzbar0t64)
+        echo " + Detected Trixie/newer Debian, installing zbar-tools (will pull libzbar0t64)..."
+        apt-get install -y zbar-tools || echo " ! Warning: zbar-tools installation failed"
+    else
+        # Older Debian - use libzbar0
+        echo " + Using libzbar0 for older Debian versions"
+        apt-get install -y libzbar0 zbar-tools || {
+            echo " ! Failed to install libzbar0, trying zbar-tools alone..."
+            apt-get install -y zbar-tools || echo " ! Warning: zbar-tools installation failed"
+        }
+    fi
+
+    # Install python3-pyzbar
+    # Note: In Trixie, python3-pyzbar may still depend on libzbar0, causing conflicts
+    # pyzbar works with libzbar0t64 at runtime, so we can install via pip if apt fails
+    echo "==> Installing python3-pyzbar..."
+    set +e  # Temporarily disable exit on error for this check
+    INSTALL_OUTPUT=$(apt-get install -y python3-pyzbar 2>&1)
+    INSTALL_STATUS=$?
+    set -e  # Re-enable exit on error
+
+    if [[ "${INSTALL_STATUS}" -eq 0 ]]; then
+        echo " + Installed python3-pyzbar via apt"
+    elif echo "${INSTALL_OUTPUT}" | grep -qE "(Unable to correct|held broken)"; then
+        echo " ! python3-pyzbar has dependency conflicts via apt, installing via pip..."
+        echo "   (pyzbar works with libzbar0t64 at runtime)"
+        pip3 install pyzbar || echo " ! Warning: Failed to install pyzbar via pip"
+    else
+        echo " ! Failed to install python3-pyzbar: ${INSTALL_OUTPUT}"
+        echo "   Attempting pip install as fallback..."
+        pip3 install pyzbar || echo " ! Warning: Failed to install pyzbar via pip"
+    fi
+
+    # Install BLAS/LAPACK libraries for OpenCV (handle version conflicts)
+    # libatlas-base-dev may have conflicts in Trixie, so try alternatives
+    echo "==> Installing BLAS/LAPACK libraries for OpenCV..."
+    set +e  # Temporarily disable exit on error for this check
+    ATLAS_OUTPUT=$(apt-get install -y libatlas-base-dev 2>&1)
+    ATLAS_STATUS=$?
+    set -e  # Re-enable exit on error
+
+    if [[ "${ATLAS_STATUS}" -eq 0 ]]; then
+        echo " + Installed libatlas-base-dev"
+    elif echo "${ATLAS_OUTPUT}" | grep -qE "(Unable to correct|held broken)"; then
+        echo " ! libatlas-base-dev has dependency conflicts, trying OpenBLAS alternative..."
+        # OpenBLAS is often a better choice on ARM systems anyway
+        set +e
+        OPENBLAS_OUTPUT=$(apt-get install -y libopenblas-dev libopenblas-base 2>&1)
+        OPENBLAS_STATUS=$?
+        set -e
+
+        if [[ "${OPENBLAS_STATUS}" -eq 0 ]]; then
+            echo " + Installed OpenBLAS as BLAS provider"
+        else
+            echo " ! OpenBLAS also has conflicts, skipping BLAS library"
+            echo "   OpenCV will use its default BLAS implementation"
+        fi
+    else
+        echo " ! Failed to install libatlas-base-dev: ${ATLAS_OUTPUT}"
+        echo "   OpenCV will use its default BLAS implementation"
+    fi
 }
 
 configure_env_vars() {
