@@ -84,57 +84,9 @@ sudo apt install -y \
   libavutil-dev \
   libswresample-dev
 
-# Prepare sidecar binary for AppImage bundling
-echo "📦 Preparing camera sidecar binary for bundling..."
-SIDECAR_BINARY_URL="${SIDECAR_BINARY_URL:-https://github.com/DaveLuhman/guestbook-sidecar/releases/download/v1.0.0/camera_sidecar}"
-SIDECAR_SOURCE_DIR="${SIDECAR_SOURCE_DIR:-sidecar}"
-SIDECAR_BINARY_PATH="${SIDECAR_SOURCE_DIR}/camera_sidecar"
-
-# Check if sidecar binary already exists
-if [[ -f "${SIDECAR_BINARY_PATH}" && -x "${SIDECAR_BINARY_PATH}" ]]; then
-    echo "✅ Sidecar binary already exists at ${SIDECAR_BINARY_PATH}"
-else
-    echo " + Sidecar binary not found, attempting to download..."
-
-    # Try to download pre-built binary
-    if [[ -n "${SIDECAR_BINARY_URL}" ]]; then
-        echo " + Downloading sidecar binary from ${SIDECAR_BINARY_URL}..."
-        mkdir -p "${SIDECAR_SOURCE_DIR}"
-        if curl -fsSL "${SIDECAR_BINARY_URL}" -o "${SIDECAR_BINARY_PATH}"; then
-            chmod +x "${SIDECAR_BINARY_PATH}"
-            echo "✅ Downloaded sidecar binary successfully"
-        else
-            echo ""
-            echo "❌ ERROR: Failed to download sidecar binary from ${SIDECAR_BINARY_URL}"
-            echo ""
-            echo "The sidecar binary is required for bundling into the AppImage."
-            echo "You need to build it manually before running 'npm run tauri build'."
-            echo ""
-            echo "To build the sidecar binary:"
-            echo "1. Ensure the sidecar submodule is initialized: git submodule update --init --recursive sidecar"
-            echo "2. Follow the build instructions in the sidecar repository"
-            echo "3. Place the built binary at: ${SIDECAR_BINARY_PATH}"
-            echo ""
-            echo "Alternatively, you can set SIDECAR_BINARY_URL to a different URL if the binary"
-            echo "is hosted elsewhere."
-            echo ""
-            exit 1
-        fi
-    else
-        echo ""
-        echo "❌ ERROR: SIDECAR_BINARY_URL is not set"
-        echo ""
-        echo "The sidecar binary is required for bundling into the AppImage."
-        echo "You need to build it manually before running 'npm run tauri build'."
-        echo ""
-        echo "To build the sidecar binary:"
-        echo "1. Ensure the sidecar submodule is initialized: git submodule update --init --recursive sidecar"
-        echo "2. Follow the build instructions in the sidecar repository"
-        echo "3. Place the built binary at: ${SIDECAR_BINARY_PATH}"
-        echo ""
-        exit 1
-    fi
-fi
+# Note: The camera sidecar is NOT bundled in the AppImage.
+# It must be installed separately to /opt/guestbook/sidecar/ during deployment.
+# The setup-script.sh handles sidecar installation.
 
 echo ""
 echo "✅ Tauri dependencies installation complete!"
@@ -143,6 +95,7 @@ echo "📋 Next steps:"
 echo "1. Run: npm install"
 echo "2. Run: npm run tauri build"
 echo ""
-echo "✅ Sidecar binary ready for bundling: ${SIDECAR_BINARY_PATH}"
+echo "ℹ️  Note: The camera sidecar is NOT bundled in the AppImage."
+echo "   It will be installed separately to /opt/guestbook/sidecar/ during deployment."
 echo ""
 echo "🔗 For more information, visit: https://tauri.app/v2/guides/getting-started/setup/linux"

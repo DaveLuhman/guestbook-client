@@ -5,27 +5,29 @@ set -euo pipefail
 # - Installs dependencies (including Python3 and camera libraries)
 # - Configures env vars
 # - Adds udev rules
-# - Downloads AppImage (includes bundled camera sidecar binary)
-# - Optionally installs camera sidecar fallback (Python script + dependencies)
+# - Downloads AppImage (does NOT include camera sidecar binary)
+# - Installs camera sidecar to /opt/guestbook/sidecar/ (required)
 # - Creates/Enables guestbook-client.service
 # - Installs helper CLI (/usr/local/bin/guestbook-cli) for service management
 #
 # Camera Sidecar:
-# The AppImage includes a bundled camera sidecar binary, so manual installation is optional.
-# The sidecar fallback (Python script) can be provided via:
-#   1. SIDECAR_SCRIPT_URL (download from URL)
-#   2. SRC_SIDECAR_DIR (copy from local directory, e.g., ./sidecar/)
-#   3. Manual placement at /usr/share/guestbook-kiosk/sidecar/camera_sidecar.py
+# The AppImage does NOT include the camera sidecar binary. The sidecar MUST be installed
+# separately to /opt/guestbook/sidecar/ (preferred) or /usr/share/guestbook-kiosk/sidecar/.
+# The sidecar can be provided via:
+#   1. SIDECAR_BINARY_URL (download pre-built binary from URL)
+#   2. SIDECAR_SCRIPT_URL (download Python script from URL)
+#   3. SRC_SIDECAR_DIR (copy from local directory, e.g., ./sidecar/)
+#   4. Manual placement at /opt/guestbook/sidecar/camera_sidecar or camera_sidecar.py
 #
-# Python dependencies (for fallback script) are managed via apt-get:
+# Python dependencies (if using Python script) are managed via apt-get:
 #   - python3-opencv (opencv-python)
 #   - python3-flask (flask)
 #   - python3-picamera2 (picamera2)
 #   - python3-psutil (psutil)
 #   - python3-pyzbar (pyzbar)
 #
-# Note: The bundled binary in the AppImage is preferred and doesn't require Python.
-#       Sidecar installation is only needed if you want a fallback Python script.
+# Note: The sidecar binary is preferred over the Python script (no Python dependencies needed).
+#       The app will search for the sidecar in /opt/guestbook/sidecar/ first, then fallback paths.
 
 SERVICE_NAME="guestbook-client"
 
@@ -43,8 +45,10 @@ APP_DIR="${APP_DIR:-/opt/guestbook}"
 APP_PATH="${APP_PATH:-${APP_DIR}/Guestbook.AppImage}"
 UDEV_RULE_PATH="${UDEV_RULE_PATH:-/etc/udev/rules.d/99-hid.rules}"
 
-# Sidecar paths (optional fallback - AppImage includes bundled binary)
-# Note: Rust code checks both /opt/guestbook/sidecar and /usr/share/guestbook-kiosk/sidecar
+# Sidecar paths (required - AppImage does NOT include bundled binary)
+# Primary location: /opt/guestbook/sidecar/ (preferred)
+# Fallback location: /usr/share/guestbook-kiosk/sidecar/
+# Note: Rust code checks /opt/guestbook/sidecar/ first, then /usr/share/guestbook-kiosk/sidecar/
 SIDECAR_DIR="${SIDECAR_DIR:-/opt/guestbook/sidecar}"
 SIDECAR_SCRIPT="${SIDECAR_SCRIPT:-${SIDECAR_DIR}/camera_sidecar.py}"
 SIDECAR_BINARY="${SIDECAR_BINARY:-${SIDECAR_DIR}/camera_sidecar}"
@@ -223,8 +227,9 @@ download_appimage() {
 }
 
 install_sidecar() {
-    echo "==> Installing camera sidecar fallback (optional)..."
-    echo "   Note: AppImage includes bundled binary - this is only for fallback."
+    echo "==> Installing camera sidecar (required)..."
+    echo "   Note: AppImage does NOT include bundled binary - sidecar must be installed separately."
+    echo "   Installing to: ${SIDECAR_DIR}"
 
     # Create sidecar directory
     mkdir -p "${SIDECAR_DIR}"
@@ -303,11 +308,23 @@ install_sidecar() {
         fi
     fi
 
-    # If nothing was installed, note that AppImage binary will be used
+    # If nothing was installed, this is an error since sidecar is required
     if [[ "${INSTALLED_SOMETHING}" -eq 0 ]]; then
-        echo " + No sidecar fallback installed - AppImage bundled binary will be used"
-        echo "   (This is normal and expected for production deployments)"
-        return
+        echo ""
+        echo "❌ ERROR: Camera sidecar installation failed!"
+        echo ""
+        echo "The camera sidecar is REQUIRED and must be installed to ${SIDECAR_DIR}/"
+        echo "The AppImage does NOT include a bundled sidecar binary."
+        echo ""
+        echo "To install the sidecar, provide one of:"
+        echo "  1. SIDECAR_BINARY_URL - URL to download pre-built binary"
+        echo "  2. SIDECAR_SCRIPT_URL - URL to download Python script"
+        echo "  3. SRC_SIDECAR_DIR - Local directory containing sidecar files"
+        echo ""
+        echo "Example:"
+        echo "  SIDECAR_BINARY_URL=https://github.com/DaveLuhman/guestbook-sidecar/releases/download/v1.0.0/camera_sidecar"
+        echo ""
+        exit 1
     fi
 
     # Verify Python dependencies if script was installed
@@ -471,16 +488,14 @@ case "${CMD}" in
         echo "AppImage: ${APP_PATH}"
         echo ""
         echo "Camera Sidecar:"
-        echo "  - Bundled binary in AppImage (preferred, no Python required)"
         if [[ -f "${SIDECAR_BINARY}" ]]; then
-            echo "  - Fallback binary: ${SIDECAR_BINARY}"
+            echo "  - Binary installed: ${SIDECAR_BINARY} (preferred, no Python required)"
         fi
         if [[ -f "${SIDECAR_SCRIPT}" ]]; then
-            echo "  - Fallback script: ${SIDECAR_SCRIPT}"
+            echo "  - Python script installed: ${SIDECAR_SCRIPT}"
         fi
-        if [[ ! -f "${SIDECAR_BINARY}" && ! -f "${SIDECAR_SCRIPT}" ]]; then
-            echo "  - Using AppImage bundled binary only (recommended)"
-        fi
+        echo "  - Location: ${SIDECAR_DIR}/"
+        echo "  - Note: AppImage does NOT include bundled sidecar - sidecar is installed separately"
         echo ""
     ;;
     uninstall)
