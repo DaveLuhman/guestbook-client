@@ -9,7 +9,7 @@ fn main() {
         eprintln!("   1. Run: bash appliance-setup/install-tauri-deps.sh");
         eprintln!("   2. Or manually place the binary at: {:?}", sidecar_path);
         eprintln!("   3. Or download it from the release URL");
-        eprintln!("");
+        eprintln!();
         eprintln!("   The app will still work, but will need the sidecar installed separately.");
     } else {
         println!("✅ Camera sidecar binary found at: {:?}", sidecar_path);

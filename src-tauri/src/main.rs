@@ -570,9 +570,7 @@ async fn start_camera_sidecar(
     }
 
     let script_path = script_path.ok_or_else(|| {
-        format!(
-            "Could not find camera sidecar binary or script. Checked bundled resources and paths: sidecar/camera_sidecar.py, ../sidecar/camera_sidecar.py, /opt/guestbook/sidecar/camera_sidecar, /usr/share/guestbook-kiosk/sidecar/camera_sidecar.py"
-        )
+        "Could not find camera sidecar binary or script. Checked bundled resources and paths: sidecar/camera_sidecar.py, ../sidecar/camera_sidecar.py, /opt/guestbook/sidecar/camera_sidecar, /usr/share/guestbook-kiosk/sidecar/camera_sidecar.py".to_string()
     })?;
 
     log::info!("Found camera sidecar at: {:?}", script_path);
@@ -625,10 +623,8 @@ async fn start_camera_sidecar(
         let stdout_reader = BufReader::new(stdout);
         let child_id = child.id();
         std::thread::spawn(move || {
-            for line in stdout_reader.lines() {
-                if let Ok(line) = line {
-                    log::info!("[Camera Sidecar PID {}] {}", child_id, line);
-                }
+            for line in stdout_reader.lines().flatten() {
+                log::info!("[Camera Sidecar PID {}] {}", child_id, line);
             }
         });
     }

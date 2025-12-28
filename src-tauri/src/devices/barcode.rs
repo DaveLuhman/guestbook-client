@@ -31,7 +31,7 @@ pub fn listen_to_barcode(device: HidDevice, window: WebviewWindow) {
                     // Try to parse barcode in format ^1234567^
                     // First, try regex pattern for ^(\d+)^ format
                     if let Ok(re) = Regex::new(r"^\^(\d+)\^$") {
-                        if let Some(caps) = re.captures(&scan_buffer.trim()) {
+                        if let Some(caps) = re.captures(scan_buffer.trim()) {
                             if let Some(onecard) = caps.get(1) {
                                 let onecard_str = onecard.as_str();
                                 // Validate it's 7 digits (OneCard format)

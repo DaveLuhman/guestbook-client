@@ -156,7 +156,7 @@ impl ConfigManager {
             .map_err(|e: PoisonError<_>| {
                 let msg = format!("Mutex poisoned: {}", e);
                 log::error!("{}", msg);
-                io::Error::new(io::ErrorKind::Other, msg)
+                io::Error::other(msg)
             })?;
 
         // Ensure parent directory exists

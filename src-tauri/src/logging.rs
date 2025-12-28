@@ -96,7 +96,7 @@ impl Log for FileLogger {
 pub fn init_logging(config_dir: &Path) -> io::Result<()> {
     let file_logger = FileLogger::new(config_dir)?;
     log::set_boxed_logger(Box::new(file_logger))
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        .map_err(|e| io::Error::other(e))?;
     log::set_max_level(LevelFilter::Debug);
     Ok(())
 }
