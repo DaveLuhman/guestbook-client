@@ -55,27 +55,27 @@ jobs:
             echo "📦 Preparing camera sidecar binary..."
             SIDECAR_BINARY_URL="https://github.com/DaveLuhman/guestbook-sidecar/releases/download/v1.0.0/camera_sidecar"
             SIDECAR_BINARY_PATH="sidecar/camera_sidecar"
-            
+
             # Check if sidecar binary already exists
             if [[ -f "${SIDECAR_BINARY_PATH}" && -x "${SIDECAR_BINARY_PATH}" ]]; then
               echo "✅ Sidecar binary already exists at ${SIDECAR_BINARY_PATH}"
             else
               echo " + Sidecar binary not found, attempting to download..."
               mkdir -p sidecar
-              
+
               # Try to download pre-built binary
               if curl -fsSL "${SIDECAR_BINARY_URL}" -o "${SIDECAR_BINARY_PATH}"; then
                 chmod +x "${SIDECAR_BINARY_PATH}"
                 echo "✅ Downloaded sidecar binary successfully"
               else
                 echo "⚠️  Download failed, attempting to build from source..."
-                
+
                 # Install Python dependencies for building
                 if [[ -f "sidecar/requirements.txt" ]]; then
                   echo " + Installing Python dependencies..."
                   pip3 install -r sidecar/requirements.txt || echo "⚠️  Some dependencies may have failed to install (this is OK for CI)"
                 fi
-                
+
                 # Build from source using PyInstaller
                 cd sidecar
                 if [[ -f "build-binary.sh" ]]; then
@@ -117,7 +117,7 @@ jobs:
                 cd ..
               fi
             fi
-            
+
             npm ci
             cargo tauri build --bundles appimage
             ls -la src-tauri/target/release/bundle || true
