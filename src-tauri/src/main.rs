@@ -473,37 +473,73 @@ async fn start_camera_sidecar(
     // 3. System installation path
 
     let mut script_path = None;
+    let mut resource_files = Vec::new();
 
     // Try to find bundled binary in AppImage resources first
     // In Tauri, resources are bundled and accessible via the resource directory
     // Check both root and subdirectory paths since Tauri may preserve directory structure
     if let Ok(resource_dir) = app.path().resource_dir() {
         log::debug!("Resource directory: {:?}", resource_dir);
-        
+
         // List contents of resource directory for debugging
         if let Ok(entries) = std::fs::read_dir(&resource_dir) {
-            let mut resource_files = Vec::new();
+            let mut resource_details = Vec::new();
             for entry in entries.flatten() {
                 if let Ok(file_name) = entry.file_name().into_string() {
-                    resource_files.push(file_name);
+                    resource_files.push(file_name.clone());
+                    // Get more details about each entry
+                    if let Ok(metadata) = entry.metadata() {
+                        let file_type = if metadata.is_dir() { "dir" } else if metadata.is_file() { "file" } else { "other" };
+                        let size = if metadata.is_file() { format!("{} bytes", metadata.len()) } else { String::new() };
+                        resource_details.push(format!("{} ({}{})", file_name, file_type, if !size.is_empty() { format!(", {}", size) } else { String::new() }));
+                    }
                 }
             }
             log::debug!("Resource directory contents: {:?}", resource_files);
+            if !resource_details.is_empty() {
+                log::debug!("Resource directory details: {:?}", resource_details);
+            }
         }
-        
+
+        // Check multiple possible paths where the binary might be bundled
         let bundled_paths = vec![
-            resource_dir.join("camera_sidecar"),           // Direct path
+            resource_dir.join("camera_sidecar"),           // Direct path (most likely)
             resource_dir.join("sidecar").join("camera_sidecar"), // Preserved directory structure
         ];
-        
+
         for bundled_binary in &bundled_paths {
-            if bundled_binary.exists() && bundled_binary.is_file() {
-                log::info!("Found bundled camera sidecar binary at: {:?}", bundled_binary);
-                script_path = Some(bundled_binary.clone());
-                break;
+            if bundled_binary.exists() {
+                if bundled_binary.is_file() {
+                    // Check if it's executable
+                    if let Ok(metadata) = std::fs::metadata(bundled_binary) {
+                        let perms = metadata.permissions();
+                        #[cfg(unix)]
+                        use std::os::unix::fs::PermissionsExt;
+                        #[cfg(unix)]
+                        let is_executable = perms.mode() & 0o111 != 0;
+                        #[cfg(not(unix))]
+                        let is_executable = true; // On Windows, assume executable
+
+                        if is_executable {
+                            log::info!("Found bundled camera sidecar binary at: {:?}", bundled_binary);
+                            script_path = Some(bundled_binary.clone());
+                            break;
+                        } else {
+                            log::warn!("Found camera_sidecar at {:?} but it's not executable", bundled_binary);
+                        }
+                    }
+                } else {
+                    log::debug!("Path exists but is not a file: {:?}", bundled_binary);
+                }
             } else {
                 log::debug!("Bundled binary not found at: {:?}", bundled_binary);
             }
+        }
+
+        if script_path.is_none() {
+            log::warn!("Camera sidecar binary not found in bundled resources. Resource directory contents: {:?}", resource_files);
+            log::warn!("This usually means the binary wasn't present when the AppImage was built.");
+            log::warn!("Ensure 'sidecar/camera_sidecar' exists before running 'npm run tauri build'");
         }
     } else {
         log::debug!("Could not access resource directory (may not be in AppImage)");
