@@ -728,7 +728,6 @@ fn main() {
         b
     };
     builder
-        .plugin(crabcamera::init())
         .manage(config_manager)
         .manage(hid_manager)
         .manage(scanner_proc)
@@ -814,4 +813,4 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Tauri application");
-}
+    }
