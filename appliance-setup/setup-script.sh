@@ -481,10 +481,14 @@ create_desktop_symlink() {
 
 create_systemd_service() {
     echo "==> Creating /etc/systemd/system/${SERVICE_NAME}.service..."
+    
+    # Determine XAUTHORITY path for the user
+    XAUTH_PATH="${RHOME}/.Xauthority"
+    
     cat > "/etc/systemd/system/${SERVICE_NAME}.service" <<EOF
 [Unit]
 Description=Guestbook Client
-After=network-online.target
+After=network-online.target graphical.target
 Wants=network-online.target
 
 [Service]
@@ -495,14 +499,24 @@ ExecStart=${APP_PATH}
 Restart=always
 RestartSec=10
 Environment=DISPLAY=:0
+Environment=XAUTHORITY=${XAUTH_PATH}
 Environment=WEBKIT_DISABLE_COMPOSITING_MODE=1
 Environment=GST_AUDIO_SINK=autoaudiosink
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=graphical.target
 EOF
 
     systemctl daemon-reload
+    
+    # Setup X11 authentication - allow local connections
+    echo "==> Setting up X11 authentication..."
+    if command -v xhost &>/dev/null; then
+        # Allow local connections to X server (for systemd service)
+        # This needs to run as the user who owns the display
+        su - "${RUSER}" -c "DISPLAY=:0 xhost +local:" 2>/dev/null || \
+        echo " ! Note: xhost setup skipped (may need manual 'xhost +local:' if issues persist)"
+    fi
 }
 
 enable_autostart() {
