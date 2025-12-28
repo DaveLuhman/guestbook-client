@@ -95,7 +95,8 @@ if [[ -f "${APP_PATH}" ]]; then
 fi
 
 # Stop service if it exists and is running
-if systemctl list-unit-files --type=service | grep -q "^${SERVICE_NAME}.service"; then
+# Use --no-legend to remove header, escape dot in service name for exact match
+if systemctl list-unit-files --type=service --no-legend 2>/dev/null | grep -E "^${SERVICE_NAME}\.service" > /dev/null 2>&1; then
     if systemctl is-active --quiet "${SERVICE_NAME}.service"; then
         info "Stopping ${SERVICE_NAME}.service..."
         systemctl stop "${SERVICE_NAME}.service" || error "Failed to stop ${SERVICE_NAME}.service"
@@ -132,7 +133,8 @@ success "AppImage deployed successfully"
 info "File size: $(numfmt --to=iec-i --suffix=B "${NEW_SIZE}" 2>/dev/null || echo "${NEW_SIZE} bytes")"
 
 # Start service if it exists
-if systemctl list-unit-files --type=service | grep -q "^${SERVICE_NAME}.service"; then
+# Use --no-legend to remove header, escape dot in service name for exact match
+if systemctl list-unit-files --type=service --no-legend 2>/dev/null | grep -E "^${SERVICE_NAME}\.service" > /dev/null 2>&1; then
     info "Starting ${SERVICE_NAME}.service..."
     if systemctl start "${SERVICE_NAME}.service"; then
         success "Service started successfully"
