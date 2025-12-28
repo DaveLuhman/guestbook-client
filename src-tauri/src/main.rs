@@ -511,22 +511,27 @@ async fn start_camera_sidecar(
             if bundled_binary.exists() {
                 if bundled_binary.is_file() {
                     // Check if it's executable
-                    if let Ok(metadata) = std::fs::metadata(bundled_binary) {
-                        let perms = metadata.permissions();
-                        #[cfg(unix)]
-                        use std::os::unix::fs::PermissionsExt;
-                        #[cfg(unix)]
-                        let is_executable = perms.mode() & 0o111 != 0;
-                        #[cfg(not(unix))]
-                        let is_executable = true; // On Windows, assume executable
-
-                        if is_executable {
-                            log::info!("Found bundled camera sidecar binary at: {:?}", bundled_binary);
-                            script_path = Some(bundled_binary.clone());
-                            break;
-                        } else {
-                            log::warn!("Found camera_sidecar at {:?} but it's not executable", bundled_binary);
+                    #[cfg(unix)]
+                    {
+                        if let Ok(metadata) = std::fs::metadata(bundled_binary) {
+                            use std::os::unix::fs::PermissionsExt;
+                            let perms = metadata.permissions();
+                            let is_executable = perms.mode() & 0o111 != 0;
+                            if is_executable {
+                                log::info!("Found bundled camera sidecar binary at: {:?}", bundled_binary);
+                                script_path = Some(bundled_binary.clone());
+                                break;
+                            } else {
+                                log::warn!("Found camera_sidecar at {:?} but it's not executable", bundled_binary);
+                            }
                         }
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        // On Windows, assume executable
+                        log::info!("Found bundled camera sidecar binary at: {:?}", bundled_binary);
+                        script_path = Some(bundled_binary.clone());
+                        break;
                     }
                 } else {
                     log::debug!("Path exists but is not a file: {:?}", bundled_binary);
@@ -606,13 +611,11 @@ async fn start_camera_sidecar(
         let stderr_reader = BufReader::new(stderr);
         let child_id = child.id();
         std::thread::spawn(move || {
-            for line in stderr_reader.lines() {
-                if let Ok(line) = line {
-                    log::error!("[Camera Sidecar PID {}] {}", child_id, line);
-                    // Store last error line for frontend access
-                    if let Ok(mut err_guard) = error_state.lock() {
-                        *err_guard = Some(line.clone());
-                    }
+            for line in stderr_reader.lines().map_while(Result::ok) {
+                log::error!("[Camera Sidecar PID {}] {}", child_id, line);
+                // Store last error line for frontend access
+                if let Ok(mut err_guard) = error_state.lock() {
+                    *err_guard = Some(line.clone());
                 }
             }
         });
@@ -623,7 +626,7 @@ async fn start_camera_sidecar(
         let stdout_reader = BufReader::new(stdout);
         let child_id = child.id();
         std::thread::spawn(move || {
-            for line in stdout_reader.lines().flatten() {
+            for line in stdout_reader.lines().map_while(Result::ok) {
                 log::info!("[Camera Sidecar PID {}] {}", child_id, line);
             }
         });
