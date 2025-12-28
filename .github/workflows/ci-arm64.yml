@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       # Cache (Cargo + npm)
       - name: Cache Cargo
@@ -35,8 +37,9 @@ jobs:
           githubToken: ${{ github.token }}
           install: |
             apt-get update
-            apt-get install -y curl git ca-certificates pkg-config build-essential patchelf wget \
+            apt-get install -y curl git ca-certificates pkg-config build-essential patchelf \
               nodejs npm \
+              python3 python3-pip python3-pyinstaller \
               libgtk-3-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev \
               libayatana-appindicator3-dev librsvg2-dev \
               libudev1 libudev-dev \
@@ -47,21 +50,74 @@ jobs:
             curl https://sh.rustup.rs -sSf | sh -s -- -y
             source $HOME/.cargo/env
             cargo install tauri-cli
-            # Install linuxdeploy for AppImage bundling
-            LINUXDEPLOY_DIR="$HOME/.local/bin"
-            mkdir -p "$LINUXDEPLOY_DIR"
-            LINUXDEPLOY_VERSION="continuous"
-            wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/${LINUXDEPLOY_VERSION}/linuxdeploy-aarch64.AppImage" -O "$LINUXDEPLOY_DIR/linuxdeploy-aarch64.AppImage"
-            chmod +x "$LINUXDEPLOY_DIR/linuxdeploy-aarch64.AppImage"
-            ln -s "linuxdeploy-aarch64.AppImage" "$LINUXDEPLOY_DIR/linuxdeploy.AppImage"
-            # Install linuxdeploy plugins
-            wget -q "https://github.com/linuxdeploy/linuxdeploy-plugin-gtk/releases/download/${LINUXDEPLOY_VERSION}/linuxdeploy-plugin-gtk-aarch64.AppImage" -O "$LINUXDEPLOY_DIR/linuxdeploy-plugin-gtk.AppImage"
-            chmod +x "$LINUXDEPLOY_DIR/linuxdeploy-plugin-gtk.AppImage"
-            wget -q "https://github.com/linuxdeploy/linuxdeploy-plugin-appstream/releases/download/${LINUXDEPLOY_VERSION}/linuxdeploy-plugin-appstream-aarch64.AppImage" -O "$LINUXDEPLOY_DIR/linuxdeploy-plugin-appstream.AppImage"
-            chmod +x "$LINUXDEPLOY_DIR/linuxdeploy-plugin-appstream.AppImage"
-            export PATH="$PATH:$LINUXDEPLOY_DIR"
           run: |
-            export PATH="$PATH:$HOME/.local/bin"
+            # Prepare camera sidecar binary
+            echo "📦 Preparing camera sidecar binary..."
+            SIDECAR_BINARY_URL="https://github.com/DaveLuhman/guestbook-sidecar/releases/download/v1.0.0/camera_sidecar"
+            SIDECAR_BINARY_PATH="sidecar/camera_sidecar"
+            
+            # Check if sidecar binary already exists
+            if [[ -f "${SIDECAR_BINARY_PATH}" && -x "${SIDECAR_BINARY_PATH}" ]]; then
+              echo "✅ Sidecar binary already exists at ${SIDECAR_BINARY_PATH}"
+            else
+              echo " + Sidecar binary not found, attempting to download..."
+              mkdir -p sidecar
+              
+              # Try to download pre-built binary
+              if curl -fsSL "${SIDECAR_BINARY_URL}" -o "${SIDECAR_BINARY_PATH}"; then
+                chmod +x "${SIDECAR_BINARY_PATH}"
+                echo "✅ Downloaded sidecar binary successfully"
+              else
+                echo "⚠️  Download failed, attempting to build from source..."
+                
+                # Install Python dependencies for building
+                if [[ -f "sidecar/requirements.txt" ]]; then
+                  echo " + Installing Python dependencies..."
+                  pip3 install -r sidecar/requirements.txt || echo "⚠️  Some dependencies may have failed to install (this is OK for CI)"
+                fi
+                
+                # Build from source using PyInstaller
+                cd sidecar
+                if [[ -f "build-binary.sh" ]]; then
+                  chmod +x build-binary.sh
+                  if ./build-binary.sh; then
+                    # Move binary to expected location
+                    if [[ -f "dist/camera_sidecar" ]]; then
+                      cp dist/camera_sidecar camera_sidecar
+                      chmod +x camera_sidecar
+                      echo "✅ Built sidecar binary successfully"
+                    else
+                      echo "❌ Build failed - binary not found in dist/"
+                      exit 1
+                    fi
+                  else
+                    echo "❌ Build script failed"
+                    exit 1
+                  fi
+                elif [[ -f "camera_sidecar.spec" ]]; then
+                  # Fallback: use PyInstaller directly
+                  if python3 -m PyInstaller camera_sidecar.spec; then
+                    if [[ -f "dist/camera_sidecar" ]]; then
+                      cp dist/camera_sidecar camera_sidecar
+                      chmod +x camera_sidecar
+                      echo "✅ Built sidecar binary successfully"
+                    else
+                      echo "❌ Build failed - binary not found in dist/"
+                      exit 1
+                    fi
+                  else
+                    echo "❌ PyInstaller build failed"
+                    exit 1
+                  fi
+                else
+                  echo "❌ ERROR: Cannot build sidecar - no build script or spec file found"
+                  echo "   Expected files: sidecar/build-binary.sh or sidecar/camera_sidecar.spec"
+                  exit 1
+                fi
+                cd ..
+              fi
+            fi
+            
             npm ci
             cargo tauri build --bundles appimage
             ls -la src-tauri/target/release/bundle || true
