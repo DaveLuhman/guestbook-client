@@ -502,6 +502,8 @@ Environment=DISPLAY=:0
 Environment=XAUTHORITY=${XAUTH_PATH}
 Environment=WEBKIT_DISABLE_COMPOSITING_MODE=1
 Environment=GST_AUDIO_SINK=autoaudiosink
+# Suppress GTK debug messages (harmless WebKitGTK internal warnings)
+Environment=G_MESSAGES_DEBUG=
 
 [Install]
 WantedBy=graphical.target
