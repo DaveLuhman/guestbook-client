@@ -531,6 +531,57 @@ async fn get_camera_sidecar_status(
     Ok(status)
 }
 
+/// Check if a camera is available on the system.
+/// For PCI-connected cameras (non-hot-swappable), this checks:
+/// - V4L2 devices (/dev/video*)
+/// - libcamera devices (for Raspberry Pi cameras)
+/// - sysfs video devices (/sys/class/video4linux/)
+fn check_camera_available() -> bool {
+    // Check for V4L2 devices (/dev/video*)
+    // Match names like "video0", "video1", etc. but not just "video"
+    if let Ok(entries) = std::fs::read_dir("/dev") {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.starts_with("video") 
+                    && name.len() > 5 
+                    && name.chars().skip(5).all(|c| c.is_ascii_digit()) {
+                    log::info!("Found V4L2 camera device: {:?}", path);
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Check for libcamera devices (Raspberry Pi cameras)
+    // Try using libcamera-hello --list-cameras command
+    if let Ok(output) = Command::new("libcamera-hello")
+        .arg("--list-cameras")
+        .output()
+    {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            // If the command succeeds and outputs camera info, we have a camera
+            if !stdout.trim().is_empty() && stdout.contains("Available cameras") {
+                log::info!("Found libcamera device(s)");
+                return true;
+            }
+        }
+    }
+
+    // Check sysfs for video devices (/sys/class/video4linux/)
+    if let Ok(entries) = std::fs::read_dir("/sys/class/video4linux") {
+        let count = entries.count();
+        if count > 0 {
+            log::info!("Found {} video device(s) in sysfs", count);
+            return true;
+        }
+    }
+
+    log::warn!("No camera devices detected on the system");
+    false
+}
+
 #[tauri::command]
 async fn start_camera_sidecar(
     scanner: tauri::State<'_, ScannerProc>,
@@ -550,7 +601,14 @@ async fn start_camera_sidecar(
         }
     }
 
-    log::info!("Starting camera sidecar...");
+    // Check if camera is available before starting sidecar
+    log::info!("Checking for camera availability...");
+    if !check_camera_available() {
+        log::warn!("No camera detected on system. Skipping camera sidecar startup.");
+        return Err("No camera detected on system. Camera sidecar will not start.".to_string());
+    }
+
+    log::info!("Camera detected, starting camera sidecar...");
 
     // Find the camera sidecar binary/script
     // Priority order:

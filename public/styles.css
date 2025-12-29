@@ -81,6 +81,81 @@ body {
   padding: 20px;
 }
 
+/* Container for firstRun window */
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 40px 20px;
+}
+
+.container h5 {
+  font-size: clamp(18px, 2.5vw, 24px);
+  font-weight: 400;
+  margin: 0;
+  text-align: center;
+  color: white;
+}
+
+.container h5.error {
+  color: #ff6b6b;
+  font-weight: 600;
+}
+
+/* Form container for firstRun window */
+.form-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  max-width: 600px;
+  align-items: stretch;
+}
+
+.form-container input {
+  padding: 15px;
+  font-size: clamp(20px, 2.5vw, 24px);
+  border: 2px solid white;
+  border-radius: 10px;
+  background-color: #0066cc;
+  color: white;
+  text-align: center;
+  font-family: 'Poppins', sans-serif;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.form-container input::placeholder {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.form-container button {
+  padding: 15px 30px;
+  font-size: clamp(20px, 2.5vw, 24px);
+  font-weight: 600;
+  font-family: 'Poppins', sans-serif;
+  background-color: #0066cc;
+  color: white;
+  border: 2px solid white;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+  min-height: 60px;
+  width: 100%;
+}
+
+.form-container button:hover {
+  background-color: #0088ff;
+  transform: translateY(-2px);
+}
+
+.form-container button:active {
+  transform: translateY(0);
+  background-color: #0055aa;
+}
+
 .row-icon {
   align-items: flex-end;
   padding-bottom: 40px;

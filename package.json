@@ -4,7 +4,7 @@
   "version": "0.1.3",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "npm run build:assets && vite",
     "build": "tsc && vite build && npm run build:assets",
     "build:assets": "node scripts/build-assets.js",
     "preview": "vite preview",

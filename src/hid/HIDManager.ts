@@ -66,8 +66,17 @@ export async function startHIDManager() {
       updateDeviceStatusIndicator('camera', 'disconnected');
     }
   } catch (error) {
+    const errorMsg = String(error);
     console.error('Failed to initialize camera scanner:', error);
-    updateDeviceStatusIndicator('camera', 'error', String(error));
+    
+    // Check if error indicates no camera is available
+    if (errorMsg.includes('No camera detected')) {
+      console.warn('No camera detected on system. Running without camera sidecar.');
+      cameraNotAvailable = true;
+      updateDeviceStatusIndicator('camera', 'disconnected', 'No camera detected');
+    } else {
+      updateDeviceStatusIndicator('camera', 'error', errorMsg);
+    }
     // Continue with HID scanner as fallback
   }
 
@@ -258,6 +267,9 @@ function setupDeviceStatusMonitoring() {
   setInterval(checkDeviceStatus, 15000);
 }
 
+// Track if we've determined that no camera is available
+let cameraNotAvailable = false;
+
 // Set up camera status monitoring using /health endpoint
 function setupCameraStatusMonitoring() {
   // Check camera health immediately
@@ -269,6 +281,11 @@ function setupCameraStatusMonitoring() {
 
 // Check camera sidecar health via /health endpoint and restart if needed
 async function checkCameraHealth() {
+  // Skip monitoring if we've determined no camera is available
+  if (cameraNotAvailable) {
+    return;
+  }
+
   try {
     // First check if the process is still running
     type ProcessStatus = {
@@ -296,7 +313,17 @@ async function checkCameraHealth() {
         // Wait a moment for restart
         await new Promise((resolve) => setTimeout(resolve, 2000));
       } catch (restartErr) {
+        const errorMsg = String(restartErr);
         console.error('[CameraMonitor] Failed to restart sidecar:', restartErr);
+        
+        // Check if error indicates no camera is available
+        if (errorMsg.includes('No camera detected')) {
+          console.warn('[CameraMonitor] No camera detected on system. Stopping camera monitoring.');
+          cameraNotAvailable = true;
+          updateDeviceStatusIndicator('camera', 'disconnected', 'No camera detected');
+          return;
+        }
+        
         updateDeviceStatusIndicator('camera', 'error', `Restart failed: ${restartErr}`);
         return;
       }
@@ -316,7 +343,16 @@ async function checkCameraHealth() {
         try {
           await invoke('start_camera_sidecar');
         } catch (restartErr) {
+          const errorMsg = String(restartErr);
           console.error('[CameraMonitor] Failed to restart sidecar:', restartErr);
+          
+          // Check if error indicates no camera is available
+          if (errorMsg.includes('No camera detected')) {
+            console.warn('[CameraMonitor] No camera detected on system. Stopping camera monitoring.');
+            cameraNotAvailable = true;
+            updateDeviceStatusIndicator('camera', 'disconnected', 'No camera detected');
+            return;
+          }
         }
       }
     }

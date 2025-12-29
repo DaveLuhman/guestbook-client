@@ -8,15 +8,11 @@ function __classPrivateFieldSet(receiver, state, value, kind, f) {
   if (kind === "m") throw new TypeError("Private method is not writable");
   if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a setter");
   if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot write private member to an object whose class did not declare it");
-  if (kind === "a") {
-    f.call(receiver, value);
-  } else if (f) {
-    f.value = value;
-  } else {
-    state.set(receiver, value);
-  }
-  return value;
+  return kind === "a" ? f.call(receiver, value) : f ? f.value = value : state.set(receiver, value), value;
 }
+
+// node_modules/@tauri-apps/api/core.js
+var _Channel_onmessage;
 var _Channel_nextMessageIndex;
 var _Channel_pendingMessages;
 var _Channel_messageEndIndex;
@@ -25,8 +21,6 @@ var SERIALIZE_TO_IPC_FN = "__TAURI_TO_IPC_KEY__";
 function transformCallback(callback, once = false) {
   return window.__TAURI_INTERNALS__.transformCallback(callback, once);
 }
-// eslint-disable-next-line no-unused-vars
-// biome-ignore lint/correctness/noUnusedVariables: function used by tauri invoke
 var Channel = class {
   constructor(onmessage) {
     _Channel_onmessage.set(this, void 0);
@@ -38,7 +32,7 @@ var Channel = class {
     this.id = transformCallback((rawMessage) => {
       const index = rawMessage.index;
       if ("end" in rawMessage) {
-        if (index === __classPrivateFieldGet(this, _Channel_nextMessageIndex, "f")) {
+        if (index == __classPrivateFieldGet(this, _Channel_nextMessageIndex, "f")) {
           this.cleanupCallback();
         } else {
           __classPrivateFieldSet(this, _Channel_messageEndIndex, index, "f");
@@ -46,7 +40,7 @@ var Channel = class {
         return;
       }
       const message = rawMessage.message;
-      if (index === __classPrivateFieldGet(this, _Channel_nextMessageIndex, "f")) {
+      if (index == __classPrivateFieldGet(this, _Channel_nextMessageIndex, "f")) {
         __classPrivateFieldGet(this, _Channel_onmessage, "f").call(this, message);
         __classPrivateFieldSet(this, _Channel_nextMessageIndex, __classPrivateFieldGet(this, _Channel_nextMessageIndex, "f") + 1, "f");
         while (__classPrivateFieldGet(this, _Channel_nextMessageIndex, "f") in __classPrivateFieldGet(this, _Channel_pendingMessages, "f")) {
@@ -72,7 +66,7 @@ var Channel = class {
   get onmessage() {
     return __classPrivateFieldGet(this, _Channel_onmessage, "f");
   }
-  [SERIALIZE_TO_IPC_FN]() {
+  [(_Channel_onmessage = /* @__PURE__ */ new WeakMap(), _Channel_nextMessageIndex = /* @__PURE__ */ new WeakMap(), _Channel_pendingMessages = /* @__PURE__ */ new WeakMap(), _Channel_messageEndIndex = /* @__PURE__ */ new WeakMap(), SERIALIZE_TO_IPC_FN)]() {
     return `__CHANNEL__:${this.id}`;
   }
   toJSON() {
@@ -88,25 +82,102 @@ _Resource_rid = /* @__PURE__ */ new WeakMap();
 var submitButton = document.getElementById("submit");
 var deviceNameInput = document.getElementById("device_name");
 var deviceLocationInput = document.getElementById("device_location");
+var serverUrlInput = document.getElementById("server_url");
 var errorTextEl = document.getElementById("error-text");
+var validateAndSanitizeUrl = (url) => {
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return { isValid: false, error: "Server URL is required" };
+  }
+  const dangerousPatterns = [
+    /javascript:/i,
+    /data:/i,
+    /vbscript:/i,
+    /on\w+\s*=/i,
+    // Event handlers like onclick=
+    /<script/i,
+    /<\/script>/i,
+    /<iframe/i,
+    /<object/i,
+    /<embed/i,
+    /eval\(/i,
+    /expression\(/i
+  ];
+  for (const pattern of dangerousPatterns) {
+    if (pattern.test(trimmed)) {
+      return { isValid: false, error: "Invalid URL: contains potentially dangerous content" };
+    }
+  }
+  let parsedUrl;
+  try {
+    let urlToParse = trimmed;
+    if (!/^https?:\/\//i.test(trimmed)) {
+      urlToParse = `http://${trimmed}`;
+    }
+    parsedUrl = new URL(urlToParse);
+  } catch {
+    return { isValid: false, error: "Invalid URL format" };
+  }
+  const allowedProtocols = ["http:", "https:"];
+  if (!allowedProtocols.includes(parsedUrl.protocol)) {
+    return { isValid: false, error: "Only http:// and https:// URLs are allowed" };
+  }
+  let sanitizedUrl;
+  if (/^https?:\/\//i.test(trimmed)) {
+    sanitizedUrl = `${parsedUrl.protocol}//${parsedUrl.host}${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`;
+  } else {
+    sanitizedUrl = `http://${parsedUrl.host}${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`;
+  }
+  if (!parsedUrl.hostname || parsedUrl.hostname.length === 0) {
+    return { isValid: false, error: "URL must include a valid hostname" };
+  }
+  sanitizedUrl = sanitizedUrl.replace(/\/+$/, "") || sanitizedUrl;
+  return { isValid: true, url: sanitizedUrl };
+};
 var submit = async (e) => {
   e.preventDefault();
-  if (!deviceNameInput || !deviceLocationInput || !errorTextEl) {
+  if (!deviceNameInput || !deviceLocationInput || !serverUrlInput || !errorTextEl) {
     throw new Error("Missing elements");
   }
-  const deviceName = deviceNameInput.value;
-  const deviceLocation = deviceLocationInput.value;
-  if (!deviceName || !deviceLocation) {
-    errorTextEl.textContent = "Please fill in both fields";
+  const deviceName = deviceNameInput.value.trim();
+  const deviceLocation = deviceLocationInput.value.trim();
+  const serverUrlRaw = serverUrlInput.value;
+  if (!deviceName || !deviceLocation || !serverUrlRaw) {
+    errorTextEl.textContent = "Please fill in all fields";
     return;
   }
-  console.log(deviceName, deviceLocation);
-  await invoke("submit_first_run_config", { deviceName, deviceLocation });
+  const urlValidation = validateAndSanitizeUrl(serverUrlRaw);
+  if (!urlValidation.isValid) {
+    errorTextEl.textContent = urlValidation.error || "Invalid server URL";
+    return;
+  }
+  if (!urlValidation.url) {
+    errorTextEl.textContent = "Invalid server URL";
+    return;
+  }
+  const serverUrl = urlValidation.url;
+  console.log(deviceName, deviceLocation, serverUrl);
+  await invoke("submit_first_run_config", { deviceName, deviceLocation, serverUrl });
   window.close();
 };
-document.addEventListener("DOMContentLoaded", () => {
-  if (!submitButton || !deviceNameInput || !deviceLocationInput) {
-    throw new Error("Missing elements");
+document.addEventListener("DOMContentLoaded", async () => {
+  if (!submitButton || !deviceNameInput || !deviceLocationInput || !serverUrlInput || !errorTextEl) {
+    console.error("Missing elements:", {
+      submitButton: !!submitButton,
+      deviceNameInput: !!deviceNameInput,
+      deviceLocationInput: !!deviceLocationInput,
+      serverUrlInput: !!serverUrlInput,
+      errorTextEl: !!errorTextEl
+    });
+    return;
+  }
+  try {
+    const config = await invoke("get_full_config");
+    if (config.server_url) {
+      serverUrlInput.value = config.server_url;
+    }
+  } catch (error) {
+    console.error("Failed to load config:", error);
   }
   deviceNameInput.addEventListener("keyup", (e) => {
     if (e.key === "Enter") {
@@ -118,5 +189,14 @@ document.addEventListener("DOMContentLoaded", () => {
       submit(e);
     }
   });
-  submitButton.addEventListener("click", submit);
+  serverUrlInput.addEventListener("keyup", (e) => {
+    if (e.key === "Enter") {
+      submit(e);
+    }
+  });
+  submitButton.addEventListener("click", (e) => {
+    console.log("Submit button clicked");
+    submit(e);
+  });
+  console.log("Event listeners attached successfully");
 });

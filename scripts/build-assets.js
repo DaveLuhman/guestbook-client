@@ -7,12 +7,18 @@ if (!existsSync(distDir)) {
   mkdirSync(distDir, { recursive: true });
 }
 
-// Run esbuild
+// Run esbuild - output to both dist/ and public/ for dev/prod compatibility
 try {
   execSync(
     "npx esbuild src/firstRun.ts --bundle --format=esm --outfile=dist/firstRun.js",
     { stdio: "inherit" },
   );
+  
+  // Also copy to public/ for dev server
+  if (existsSync("dist/firstRun.js")) {
+    copyFileSync("dist/firstRun.js", "public/firstRun.js");
+    console.log("✅ Copied dist/firstRun.js to public/firstRun.js for dev server");
+  }
 
   // Copy required files from public/ to dist/
   const filesToCopy = [

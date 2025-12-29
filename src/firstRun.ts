@@ -115,8 +115,15 @@ const submit = async (e: Event) => {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-    if (!submitButton || !deviceNameInput || !deviceLocationInput || !serverUrlInput) {
-        throw new Error('Missing elements');
+    if (!submitButton || !deviceNameInput || !deviceLocationInput || !serverUrlInput || !errorTextEl) {
+        console.error('Missing elements:', {
+            submitButton: !!submitButton,
+            deviceNameInput: !!deviceNameInput,
+            deviceLocationInput: !!deviceLocationInput,
+            serverUrlInput: !!serverUrlInput,
+            errorTextEl: !!errorTextEl
+        });
+        return;
     }
 
     // Load current config to populate server_url field
@@ -129,6 +136,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.error('Failed to load config:', error);
     }
 
+    // Attach event listeners
     deviceNameInput.addEventListener('keyup', (e) => {
         if (e.key === 'Enter') {
             submit(e);
@@ -144,6 +152,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             submit(e);
         }
     });
-    submitButton.addEventListener('click', submit);
+    submitButton.addEventListener('click', (e) => {
+        console.log('Submit button clicked');
+        submit(e);
+    });
+    
+    console.log('Event listeners attached successfully');
 });
 
