@@ -481,10 +481,10 @@ create_desktop_symlink() {
 
 create_systemd_service() {
     echo "==> Creating /etc/systemd/system/${SERVICE_NAME}.service..."
-    
+
     # Determine XAUTHORITY path for the user
     XAUTH_PATH="${RHOME}/.Xauthority"
-    
+
     cat > "/etc/systemd/system/${SERVICE_NAME}.service" <<EOF
 [Unit]
 Description=Guestbook Client
@@ -510,7 +510,7 @@ WantedBy=graphical.target
 EOF
 
     systemctl daemon-reload
-    
+
     # Setup X11 authentication - allow local connections
     echo "==> Setting up X11 authentication..."
     if command -v xhost &>/dev/null; then

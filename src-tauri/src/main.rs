@@ -24,6 +24,8 @@ use std::sync::{Arc, Mutex};
 use std::process::{Command, Child, Stdio};
 use std::path::PathBuf;
 use std::io::{BufRead, BufReader};
+use url::Url;
+use regex::Regex;
 
 #[tauri::command]
 fn get_hid_devices() -> Vec<String> {
@@ -177,16 +179,101 @@ async fn first_run_trigger(app: tauri::AppHandle) {
     first_run_window.set_focus().unwrap();
 }
 
+/// Validates and sanitizes a server URL to prevent code injection and ensure it's a valid URL.
+/// Returns the sanitized URL or an error message.
+fn validate_and_sanitize_url(url: &str) -> Result<String, String> {
+    let trimmed = url.trim();
+
+    if trimmed.is_empty() {
+        return Err("Server URL is required".to_string());
+    }
+
+    // Check for dangerous patterns that could indicate code injection
+    let dangerous_patterns = [
+        "javascript:",
+        "data:",
+        "vbscript:",
+        "<script",
+        "</script>",
+        "<iframe",
+        "<object",
+        "<embed",
+        "eval(",
+        "expression(",
+    ];
+
+    let url_lower = trimmed.to_lowercase();
+    for pattern in &dangerous_patterns {
+        if url_lower.contains(pattern) {
+            return Err(format!("Invalid URL: contains potentially dangerous content ({})", pattern));
+        }
+    }
+
+    // Check for event handler patterns (onclick=, onerror=, etc.)
+    if Regex::new(r"on\w+\s*=").unwrap().is_match(trimmed) {
+        return Err("Invalid URL: contains event handler patterns".to_string());
+    }
+
+    // Parse URL - try with http:// prefix if no protocol is provided
+    let url_to_parse = if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
+        format!("http://{}", trimmed)
+    } else {
+        trimmed.to_string()
+    };
+
+    let parsed_url = Url::parse(&url_to_parse)
+        .map_err(|e| format!("Invalid URL format: {}", e))?;
+
+    // Only allow http and https protocols
+    match parsed_url.scheme() {
+        "http" | "https" => {},
+        _ => return Err("Only http:// and https:// URLs are allowed".to_string()),
+    }
+
+    // Ensure hostname is present
+    if parsed_url.host().is_none() {
+        return Err("URL must include a valid hostname".to_string());
+    }
+
+    // Reconstruct the URL with the original protocol if it was provided
+    let sanitized_url = if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        format!("{}://{}{}{}{}",
+            parsed_url.scheme(),
+            parsed_url.host().unwrap(),
+            parsed_url.path(),
+            parsed_url.query().map(|q| format!("?{}", q)).unwrap_or_default(),
+            parsed_url.fragment().map(|f| format!("#{}", f)).unwrap_or_default()
+        )
+    } else {
+        format!("http://{}{}{}{}",
+            parsed_url.host().unwrap(),
+            parsed_url.path(),
+            parsed_url.query().map(|q| format!("?{}", q)).unwrap_or_default(),
+            parsed_url.fragment().map(|f| format!("#{}", f)).unwrap_or_default()
+        )
+    };
+
+    // Remove trailing slashes from pathname (except root)
+    let sanitized_url = sanitized_url.trim_end_matches('/');
+
+    Ok(sanitized_url.to_string())
+}
+
 #[tauri::command]
 async fn submit_first_run_config(
     config_manager: tauri::State<'_, ConfigManager>,
     device_name: String,
     device_location: String,
+    server_url: String,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
+    // Validate and sanitize the server URL
+    let sanitized_url = validate_and_sanitize_url(&server_url)?;
+
     let mut config = config_manager.get_config()?;
-    config.device_friendly_name = Some(device_name);
-    config.device_location = Some(device_location);
+    config.device_friendly_name = Some(device_name.trim().to_string());
+    config.device_location = Some(device_location.trim().to_string());
+    config.server_url = Some(sanitized_url);
     config.first_run = false;
     // Save config
     {
