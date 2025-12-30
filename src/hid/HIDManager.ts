@@ -115,7 +115,7 @@ export async function startHIDManager() {
           soundManager.playSuccess();
           showEntrySuccess();
         })
-        .catch((error) => {
+        .catch(async (error) => {
           // Error - non-2xx HTTP response or network error
           console.error('Submit error:', error);
           soundManager.playError();
@@ -128,6 +128,24 @@ export async function startHIDManager() {
           } else if (error && typeof error === 'object' && 'message' in error) {
             errorMsg = String((error as { message: unknown }).message);
           }
+          
+          // Check if device is orphaned
+          if (errorMsg.includes('Device Orphaned') || errorMsg.includes('orphaned')) {
+            errorHandler.handleApplicationError('barcode', errorMsg, 'high');
+            // Try to automatically recover by clearing orphaned state and triggering re-registration
+            try {
+              const config = await invoke<{ first_run: boolean }>('get_full_config');
+              if (!config.first_run) {
+                console.log('Device orphaned during entry - clearing state and triggering re-registration');
+                await invoke('clear_orphaned_state_command');
+                await invoke('first_run_trigger');
+                return; // Exit - first-run screen will handle re-registration
+              }
+            } catch (recoveryError) {
+              console.error('Failed to recover from orphaned state:', recoveryError);
+            }
+          }
+          
           errorHandler.handleApplicationError('barcode', errorMsg, 'high');
           showEntryError();
         });
@@ -210,6 +228,24 @@ export async function startHIDManager() {
       } else if (error && typeof error === 'object' && 'message' in error) {
         errorMsg = String((error as { message: unknown }).message);
       }
+      
+      // Check if device is orphaned
+      if (errorMsg.includes('Device Orphaned') || errorMsg.includes('orphaned')) {
+        errorHandler.handleApplicationError('magtek', errorMsg, 'high');
+        // Try to automatically recover by clearing orphaned state and triggering re-registration
+        try {
+          const config = await invoke<{ first_run: boolean }>('get_full_config');
+          if (!config.first_run) {
+            console.log('Device orphaned during entry - clearing state and triggering re-registration');
+            await invoke('clear_orphaned_state_command');
+            await invoke('first_run_trigger');
+            return; // Exit - first-run screen will handle re-registration
+          }
+        } catch (recoveryError) {
+          console.error('Failed to recover from orphaned state:', recoveryError);
+        }
+      }
+      
       errorHandler.handleApplicationError('magtek', errorMsg, 'high');
       showEntryError();
     }

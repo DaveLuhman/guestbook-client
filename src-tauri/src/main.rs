@@ -10,7 +10,7 @@ mod logging;
 mod debug_logging;
 #[cfg(debug_assertions)]
 mod debug_server;
-use api::devices::{register_device, send_heartbeat, reset_device, check_network_availability};
+use api::devices::{register_device, send_heartbeat, reset_device, check_network_availability, clear_orphaned_state};
 use config::config_manager::{get_full_config, set_camera_preview_enabled, ConfigManager};
 use devices::barcode::{listen_to_barcode, open_symbol_scanner};
 use devices::magtek::{listen_to_magtek, open_magtek_reader};
@@ -25,6 +25,7 @@ use std::process::{Command, Child, Stdio};
 use std::path::PathBuf;
 use std::io::{BufRead, BufReader};
 use url::Url;
+use once_cell::sync::Lazy;
 use regex::Regex;
 
 #[tauri::command]
@@ -179,11 +180,14 @@ async fn first_run_trigger(app: tauri::AppHandle) {
     first_run_window.set_focus().unwrap();
 }
 
+// Compile regex once at startup instead of on every call
+static EVENT_HANDLER_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"on\w+\s*=").expect("valid regex"));
+
 /// Validates and sanitizes a server URL to prevent code injection and ensure it's a valid URL.
 /// Returns the sanitized URL or an error message.
 fn validate_and_sanitize_url(url: &str) -> Result<String, String> {
     let trimmed = url.trim();
-
     if trimmed.is_empty() {
         return Err("Server URL is required".to_string());
     }
@@ -203,60 +207,69 @@ fn validate_and_sanitize_url(url: &str) -> Result<String, String> {
     ];
 
     let url_lower = trimmed.to_lowercase();
-    for pattern in &dangerous_patterns {
-        if url_lower.contains(pattern) {
-            return Err(format!("Invalid URL: contains potentially dangerous content ({})", pattern));
-        }
+    if dangerous_patterns.iter().any(|p| url_lower.contains(p)) {
+        return Err("Invalid URL: contains potentially dangerous content".to_string());
     }
 
-    // Check for event handler patterns (onclick=, onerror=, etc.)
-    if Regex::new(r"on\w+\s*=").unwrap().is_match(trimmed) {
+    if EVENT_HANDLER_RE.is_match(trimmed) {
         return Err("Invalid URL: contains event handler patterns".to_string());
     }
 
-    // Parse URL - try with http:// prefix if no protocol is provided
+    // Add default scheme if missing
     let url_to_parse = if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
         format!("http://{}", trimmed)
     } else {
         trimmed.to_string()
     };
 
-    let parsed_url = Url::parse(&url_to_parse)
+    let parsed = Url::parse(&url_to_parse)
         .map_err(|e| format!("Invalid URL format: {}", e))?;
 
-    // Only allow http and https protocols
-    match parsed_url.scheme() {
-        "http" | "https" => {},
+    match parsed.scheme() {
+        "http" | "https" => {}
         _ => return Err("Only http:// and https:// URLs are allowed".to_string()),
     }
 
-    // Ensure hostname is present
-    if parsed_url.host().is_none() {
+    if parsed.host().is_none() {
         return Err("URL must include a valid hostname".to_string());
     }
 
-    // Reconstruct the URL with the original protocol if it was provided
-    let sanitized_url = if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
-        format!("{}://{}{}{}{}",
-            parsed_url.scheme(),
-            parsed_url.host().unwrap(),
-            parsed_url.path(),
-            parsed_url.query().map(|q| format!("?{}", q)).unwrap_or_default(),
-            parsed_url.fragment().map(|f| format!("#{}", f)).unwrap_or_default()
-        )
-    } else {
-        format!("http://{}{}{}{}",
-            parsed_url.host().unwrap(),
-            parsed_url.path(),
-            parsed_url.query().map(|q| format!("?{}", q)).unwrap_or_default(),
-            parsed_url.fragment().map(|f| format!("#{}", f)).unwrap_or_default()
-        )
-    };
+    // Extract all URL components before modifying the URL
+    // Explicitly preserve the port if it was specified in the original URL
+    // The port() method returns Some(port) only if explicitly set (non-default)
+    let port = parsed.port();
+    let scheme = parsed.scheme();
+    let host = parsed.host_str().ok_or_else(|| "Invalid host".to_string())?;
+    let mut path = parsed.path().to_string();
+    let query = parsed.query();
+    let fragment = parsed.fragment();
 
-    // Remove trailing slashes from pathname (except root)
-    let sanitized_url = sanitized_url.trim_end_matches('/');
+    // Trim trailing slashes on the path (except root)
+    if path != "/" {
+        path = path.trim_end_matches('/').to_string();
+    }
 
-    Ok(sanitized_url.to_string())
+    // Reconstruct URL with explicit port preservation
+    let mut result = format!("{}://{}", scheme, host);
+    if let Some(port_num) = port {
+        result.push_str(&format!(":{}", port_num));
+    }
+    result.push_str(&path);
+    if let Some(q) = query {
+        result.push('?');
+        result.push_str(q);
+    }
+    if let Some(f) = fragment {
+        result.push('#');
+        result.push_str(f);
+    }
+
+    Ok(result)
+}
+
+#[tauri::command]
+async fn validate_and_sanitize_url_command(url: String) -> Result<String, String> {
+    validate_and_sanitize_url(&url)
 }
 
 #[tauri::command]
@@ -487,6 +500,14 @@ async fn reset_device_command(
 }
 
 #[tauri::command]
+fn clear_orphaned_state_command(
+    config_manager: tauri::State<'_, ConfigManager>,
+) -> Result<(), String> {
+    log::info!("Clear orphaned state command received");
+    clear_orphaned_state(config_manager)
+}
+
+#[tauri::command]
 fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
@@ -543,28 +564,52 @@ fn check_camera_available() -> bool {
         for entry in entries.flatten() {
             let path = entry.path();
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.starts_with("video") 
-                    && name.len() > 5 
-                    && name.chars().skip(5).all(|c| c.is_ascii_digit()) {
-                    log::info!("Found V4L2 camera device: {:?}", path);
-                    return true;
+                if let Some(suffix) = name.strip_prefix("video") {
+                    if !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()) {
+                        log::info!("Found V4L2 camera device: {:?}", path);
+                        return true;
+                    }
                 }
             }
         }
     }
 
     // Check for libcamera devices (Raspberry Pi cameras)
-    // Try using libcamera-hello --list-cameras command
-    if let Ok(output) = Command::new("libcamera-hello")
-        .arg("--list-cameras")
-        .output()
-    {
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            // If the command succeeds and outputs camera info, we have a camera
-            if !stdout.trim().is_empty() && stdout.contains("Available cameras") {
-                log::info!("Found libcamera device(s)");
-                return true;
+    // Try using libcamera-hello --list-cameras command with timeout protection
+    // Use timeout command if available, otherwise try direct call (may hang)
+    if Command::new("timeout").arg("--version").output().is_ok() {
+        // Use timeout command to prevent hanging
+        if let Ok(output) = Command::new("timeout")
+            .arg("5") // 5 second timeout
+            .arg("libcamera-hello")
+            .arg("--list-cameras")
+            .output()
+        {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                // If the command succeeds and outputs camera info, we have a camera
+                if !stdout.trim().is_empty() && stdout.contains("Available cameras") {
+                    log::info!("Found libcamera device(s)");
+                    return true;
+                }
+            }
+        }
+    } else {
+        // Fallback: try direct call (may hang, but better than nothing)
+        // Only proceed if libcamera-hello exists
+        if Command::new("libcamera-hello").arg("--version").output().is_ok() {
+            log::debug!("timeout command not available, trying libcamera-hello directly (may hang)");
+            if let Ok(output) = Command::new("libcamera-hello")
+                .arg("--list-cameras")
+                .output()
+            {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    if !stdout.trim().is_empty() && stdout.contains("Available cameras") {
+                        log::info!("Found libcamera device(s)");
+                        return true;
+                    }
+                }
             }
         }
     }
@@ -652,7 +697,8 @@ async fn start_camera_sidecar(
             - /usr/share/guestbook-kiosk/sidecar/camera_sidecar (alternative production)\n\
             - sidecar/camera_sidecar.py (development)\n\
             \n\
-            Install the sidecar by running: bash appliance-setup/install-tauri-deps.sh"
+            The camera sidecar must be installed separately via the setup script from the admin portal. \
+            Contact your administrator if the sidecar is missing."
         )
     })?;
 
@@ -821,6 +867,7 @@ fn main() {
             first_run_trigger,
             get_full_config,
             set_camera_preview_enabled,
+            validate_and_sanitize_url_command,
             submit_first_run_config,
             send_heartbeat_command,
             check_network_availability_command,
@@ -828,6 +875,7 @@ fn main() {
             test_logging,
             restart_appliance,
             reset_device_command,
+            clear_orphaned_state_command,
             submit_swipe_entry,
             submit_barcode_entry,
             submit_manual_entry,

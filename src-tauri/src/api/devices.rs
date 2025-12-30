@@ -77,17 +77,23 @@ pub async fn reset_device(
         })?;
 
     let status = response.status();
-    if !status.is_success() {
+    if status.as_u16() == 403 {
+        // Device is already deleted/orphaned on server - this is expected
+        // We'll still clear local config to allow re-registration
+        log::info!("Device appears to be orphaned (403) - skipping server deletion, clearing local config");
+    } else if !status.is_success() {
         let error_msg = format!("Server returned error status: {}", status);
         log::error!("{}", error_msg);
         return Err(error_msg);
+    } else {
+        log::info!("Device successfully retired from server");
     }
 
-    log::info!("Device successfully retired from server");
-
-    // Then, reset the first_run flag to true
+    // Clear local config regardless of server response (handles orphaned devices)
     config_manager.set_first_run(true);
-    log::info!("Device reset: first_run set to true");
+    // Clear server token to force re-registration
+    config_manager.set_server_token("".to_string());
+    log::info!("Device reset: first_run set to true, server token cleared");
 
     Ok(())
 }
@@ -114,8 +120,16 @@ pub async fn send_heartbeat(config_manager: tauri::State<'_, ConfigManager>) -> 
         .await
         .map_err(|e| format!("Failed to send heartbeat request: {}", e))?;
 
-    if !response.status().is_success() {
-        let status = response.status();
+    let status = response.status();
+    if status.as_u16() == 403 {
+        // Device is orphaned - deleted from server but still has local config
+        let body = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "<no body>".to_string());
+        log::warn!("Heartbeat failed - device appears to be orphaned (403): {}", body);
+        return Err("Device Orphaned - This device has been removed from the server".to_string());
+    } else if !status.is_success() {
         let body = response
             .text()
             .await
@@ -125,7 +139,21 @@ pub async fn send_heartbeat(config_manager: tauri::State<'_, ConfigManager>) -> 
     Ok(())
 }
 
+/// Clear orphaned device state by resetting config to allow re-registration.
+/// This clears the server token and sets first_run to true.
+pub fn clear_orphaned_state(config_manager: tauri::State<'_, ConfigManager>) -> Result<(), String> {
+    log::info!("Clearing orphaned device state - resetting config for re-registration");
+    config_manager.set_first_run(true);
+    config_manager.set_server_token("".to_string());
+    log::info!("Orphaned state cleared: first_run set to true, server token cleared");
+    Ok(())
+}
+
 /// Lightweight network availability check using the heartbeat endpoint with a short timeout.
+/// Returns:
+/// - Ok(true) - Network available, device valid
+/// - Ok(false) - Network unavailable or other non-403 errors
+/// - Err("ORPHANED") - Device is orphaned (403 response indicates device not found on server)
 pub async fn check_network_availability(
     config_manager: tauri::State<'_, ConfigManager>,
 ) -> Result<bool, String> {
@@ -161,10 +189,21 @@ pub async fn check_network_availability(
 
     match response {
         Ok(resp) => {
-            if resp.status().is_success() {
+            let status = resp.status();
+            if status.is_success() {
                 Ok(true)
+            } else if status.as_u16() == 403 {
+                // Device is orphaned - deleted from server but still has local config
+                let body = resp
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "<no body>".to_string());
+                log::warn!(
+                    "Device appears to be orphaned (403): {}",
+                    body
+                );
+                Err("ORPHANED".to_string())
             } else {
-                let status = resp.status();
                 let body = resp
                     .text()
                     .await

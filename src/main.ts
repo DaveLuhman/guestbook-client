@@ -244,6 +244,24 @@ function initializeManualEntry() {
           error instanceof Error
             ? error.message
             : 'Manual entry submission failed';
+        
+        // Check if device is orphaned
+        if (errorMsg.includes('Device Orphaned') || errorMsg.includes('orphaned')) {
+          errorHandler.handleApplicationError('keypad', errorMsg, 'high');
+          // Try to automatically recover by clearing orphaned state and triggering re-registration
+          try {
+            const config: config = await invoke('get_full_config');
+            if (!config.first_run) {
+              console.log('Device orphaned during entry - clearing state and triggering re-registration');
+              await invoke('clear_orphaned_state_command');
+              await invoke('first_run_trigger');
+              return; // Exit - first-run screen will handle re-registration
+            }
+          } catch (recoveryError) {
+            console.error('Failed to recover from orphaned state:', recoveryError);
+          }
+        }
+        
         errorHandler.handleApplicationError('keypad', errorMsg, 'high');
         showEntryError();
       }
@@ -539,6 +557,20 @@ async function handleDeviceReset() {
   } catch (error) {
     console.error('Device reset failed:', error);
     const errorMsg = error instanceof Error ? error.message : 'Device reset failed';
+    
+    // Note: Reset should succeed even for orphaned devices (backend handles 403 gracefully)
+    // But if there's an error, log it but still show success since local config is cleared
+    if (errorMsg.includes('403') || errorMsg.includes('orphaned')) {
+      // Device was orphaned - reset still succeeded locally
+      console.log('Device was orphaned, but local reset completed successfully');
+      confirmBtn.style.backgroundColor = '#00aa00';
+      confirmBtn.textContent = 'Reset Complete';
+      setTimeout(() => {
+        closeResetConfirmation();
+      }, 2000);
+      return;
+    }
+    
     errorHandler.handleApplicationError('system', errorMsg, 'medium');
 
     // Reset button state on error
@@ -729,11 +761,19 @@ async function scheduleHeartbeat() {
  */
 async function startNetworkMonitoring() {
   let lastKnownAvailable: boolean | null = null;
+  let isOrphaned = false;
 
-  const updateNetworkUI = (isAvailable: boolean) => {
+  const updateNetworkUI = (isAvailable: boolean, orphaned: boolean = false) => {
     const entryData = document.getElementById('entry-data');
 
-    if (isAvailable) {
+    if (orphaned) {
+      // Device is orphaned - show appropriate message
+      document.body.classList.add('network-unavailable-state');
+      if (entryData && !isEntryFeedbackShowing) {
+        entryData.innerHTML =
+          '<p>This device has been removed from the server. Please reset and re-register.</p>';
+      }
+    } else if (isAvailable) {
       // Clear network warning state
       document.body.classList.remove('network-unavailable-state');
 
@@ -763,19 +803,51 @@ async function startNetworkMonitoring() {
         'check_network_availability_command'
       );
 
+      // Device is valid and network is available
+      if (isOrphaned) {
+        // Device was orphaned but now appears valid (shouldn't happen, but handle gracefully)
+        console.log('Device status changed from orphaned to valid');
+        isOrphaned = false;
+      }
+
       if (isAvailable !== lastKnownAvailable) {
-        updateNetworkUI(isAvailable);
+        updateNetworkUI(isAvailable, false);
         lastKnownAvailable = isAvailable;
       }
     } catch (e) {
-      console.error('Network availability check failed', e);
-      const errorMsg =
-        e instanceof Error ? e.message : 'Network availability check failed';
-      errorHandler.handleApplicationError('network', errorMsg, 'medium');
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      
+      // Check if device is orphaned (403 response)
+      if (errorMsg === 'ORPHANED') {
+        console.warn('Device detected as orphaned during network check');
+        isOrphaned = true;
+        
+        // Check if we should automatically trigger re-registration
+        try {
+          const config: config = await invoke('get_full_config');
+          if (!config.first_run) {
+            // Device is configured but orphaned - clear state and trigger re-registration
+            console.log('Clearing orphaned state and triggering re-registration');
+            await invoke('clear_orphaned_state_command');
+            await invoke('first_run_trigger');
+            // Exit monitoring - first-run screen will handle re-registration
+            return;
+          }
+        } catch (configError) {
+          console.error('Failed to check config for orphaned recovery:', configError);
+        }
+        
+        updateNetworkUI(false, true);
+        errorHandler.handleApplicationError('network', 'Device Orphaned - This device has been removed from the server', 'high');
+      } else {
+        // Other network errors
+        console.error('Network availability check failed', e);
+        errorHandler.handleApplicationError('network', errorMsg, 'medium');
 
-      if (lastKnownAvailable !== false) {
-        updateNetworkUI(false);
-        lastKnownAvailable = false;
+        if (lastKnownAvailable !== false) {
+          updateNetworkUI(false, false);
+          lastKnownAvailable = false;
+        }
       }
     }
   };
@@ -853,6 +925,25 @@ function updateCameraVideoDisplay(enabled: boolean) {
 (async () => {
   const config: config = await invoke('get_full_config');
   console.log(config);
+  
+  // Check for orphaned device state on boot if device is already configured
+  if (!config.first_run) {
+    try {
+      await invoke<boolean>('check_network_availability_command');
+      // If check succeeds, device is valid - continue with normal startup
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      // Check if device is orphaned (403 response)
+      if (errorMsg === 'ORPHANED') {
+        console.warn('Device appears to be orphaned - clearing state and triggering re-registration');
+        await invoke('clear_orphaned_state_command');
+        await invoke('first_run_trigger');
+        // Exit early - first-run screen will handle re-registration
+        return;
+      }
+    }
+  }
+  
   if (config.first_run) {
     await invoke('first_run_trigger');
   }

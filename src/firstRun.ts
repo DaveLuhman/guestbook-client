@@ -7,77 +7,44 @@ const serverUrlInput = document.getElementById('server_url');
 const errorTextEl = document.getElementById('error-text');
 
 /**
- * Validates and sanitizes a server URL to prevent code injection and ensure it's a valid URL.
+ * Performs basic frontend URL validation (minimal checks before backend validation).
+ * Full validation with security checks is done on the backend.
  * @param url - The URL string to validate
  * @returns An object with isValid flag and sanitized URL or error message
  */
-const validateAndSanitizeUrl = (url: string): { isValid: boolean; url?: string; error?: string } => {
-    // Trim whitespace
-    const trimmed = url.trim();
-
+const validateAndSanitizeUrl = (
+    raw: string,
+): { isValid: boolean; url?: string; error?: string } => {
+    const trimmed = raw.trim();
     if (!trimmed) {
         return { isValid: false, error: 'Server URL is required' };
     }
 
-    // Check for dangerous patterns that could indicate code injection
-    const dangerousPatterns = [
-        /javascript:/i,
-        /data:/i,
-        /vbscript:/i,
-        /on\w+\s*=/i, // Event handlers like onclick=
-        /<script/i,
-        /<\/script>/i,
-        /<iframe/i,
-        /<object/i,
-        /<embed/i,
-        /eval\(/i,
-        /expression\(/i,
-    ];
+    // Ensure there is a protocol so URL() will parse it
+    const withProtocol = /^https?:\/\//i.test(trimmed)
+        ? trimmed
+        : `http://${trimmed}`;
 
-    for (const pattern of dangerousPatterns) {
-        if (pattern.test(trimmed)) {
-            return { isValid: false, error: 'Invalid URL: contains potentially dangerous content' };
-        }
-    }
-
-    // Try to parse as URL
-    let parsedUrl: URL;
+    let parsed: URL;
     try {
-        // If URL doesn't have a protocol, try adding http:// for validation
-        let urlToParse = trimmed;
-        if (!/^https?:\/\//i.test(trimmed)) {
-            urlToParse = `http://${trimmed}`;
-        }
-        parsedUrl = new URL(urlToParse);
+        parsed = new URL(withProtocol);
     } catch {
         return { isValid: false, error: 'Invalid URL format' };
     }
 
-    // Only allow http and https protocols
-    const allowedProtocols = ['http:', 'https:'];
-    if (!allowedProtocols.includes(parsedUrl.protocol)) {
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
         return { isValid: false, error: 'Only http:// and https:// URLs are allowed' };
     }
 
-    // Reconstruct the URL with the original protocol if it was provided
-    let sanitizedUrl: string;
-    if (/^https?:\/\//i.test(trimmed)) {
-        // Original had protocol, use parsed URL but keep original protocol
-        sanitizedUrl = `${parsedUrl.protocol}//${parsedUrl.host}${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`;
-    } else {
-        // Original didn't have protocol, default to http
-        sanitizedUrl = `http://${parsedUrl.host}${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`;
-    }
-
-    // Additional validation: ensure hostname is present
-    if (!parsedUrl.hostname || parsedUrl.hostname.length === 0) {
+    if (!parsed.hostname) {
         return { isValid: false, error: 'URL must include a valid hostname' };
     }
 
-    // Remove trailing slashes from pathname (except root)
-    sanitizedUrl = sanitizedUrl.replace(/\/+$/, '') || sanitizedUrl;
+    // Normalise via URL API and optionally strip trailing slash
+    let normalized = parsed.toString();
+    normalized = normalized.replace(/\/+$/, '') || normalized;
 
-    return { isValid: true, url: sanitizedUrl };
+    return { isValid: true, url: normalized };
 };
 
 const submit = async (e: Event) => {
@@ -95,19 +62,24 @@ const submit = async (e: Event) => {
         return;
     }
 
-    // Validate and sanitize URL
-    const urlValidation = validateAndSanitizeUrl(serverUrlRaw);
-    if (!urlValidation.isValid) {
-        errorTextEl.textContent = urlValidation.error || 'Invalid server URL';
+    // Basic frontend validation
+    const basicValidation = validateAndSanitizeUrl(serverUrlRaw);
+    if (!basicValidation.isValid || !basicValidation.url) {
+        errorTextEl.textContent = basicValidation.error || 'Invalid server URL';
         return;
     }
 
-    if (!urlValidation.url) {
-        errorTextEl.textContent = 'Invalid server URL';
+    // Backend validation with full security checks
+    let serverUrl: string;
+    try {
+        serverUrl = await invoke<string>('validate_and_sanitize_url_command', {
+            url: basicValidation.url,
+        });
+    } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : 'Invalid server URL';
+        errorTextEl.textContent = errorMsg;
         return;
     }
-
-    const serverUrl = urlValidation.url;
 
     console.log(deviceName, deviceLocation, serverUrl);
     await invoke('submit_first_run_config', { deviceName, deviceLocation, serverUrl });
