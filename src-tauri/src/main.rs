@@ -690,16 +690,14 @@ async fn start_camera_sidecar(
     }
 
     let script_path = script_path.ok_or_else(|| {
-        format!(
-            "Could not find camera sidecar binary or script. \
+        "Could not find camera sidecar binary or script. \
             Expected locations:\n\
             - /opt/guestbook/sidecar/camera_sidecar (primary production location)\n\
             - /usr/share/guestbook-kiosk/sidecar/camera_sidecar (alternative production)\n\
             - sidecar/camera_sidecar.py (development)\n\
             \n\
             The camera sidecar must be installed separately via the setup script from the admin portal. \
-            Contact your administrator if the sidecar is missing."
-        )
+            Contact your administrator if the sidecar is missing.".to_string()
     })?;
 
     log::info!("Found camera sidecar at: {:?}", script_path);
