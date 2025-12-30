@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+
 const submitButton = document.getElementById('submit');
 const deviceNameInput = document.getElementById('device_name');
 const deviceLocationInput = document.getElementById('device_location');

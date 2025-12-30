@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guestbook Debug Logs</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Courier New', monospace;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #3e3e3e;
+        }
+        h1 {
+            color: #4ec9b0;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            padding: 8px 16px;
+            background: #007acc;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #005a9e;
+        }
+        button.danger {
+            background: #d32f2f;
+        }
+        button.danger:hover {
+            background: #b71c1c;
+        }
+        .stats {
+            color: #858585;
+            font-size: 12px;
+        }
+        .logs-container {
+            background: #252526;
+            border: 1px solid #3e3e3e;
+            border-radius: 4px;
+            padding: 10px;
+            max-height: calc(100vh - 150px);
+            overflow-y: auto;
+        }
+        .log-entry {
+            padding: 4px 8px;
+            margin: 2px 0;
+            border-left: 3px solid transparent;
+            font-size: 12px;
+            line-height: 1.4;
+            word-wrap: break-word;
+        }
+        .log-entry:hover {
+            background: #2a2d2e;
+        }
+        .log-entry.debug {
+            border-left-color: #858585;
+            color: #858585;
+        }
+        .log-entry.info {
+            border-left-color: #4ec9b0;
+            color: #4ec9b0;
+        }
+        .log-entry.warn {
+            border-left-color: #dcdcaa;
+            color: #dcdcaa;
+        }
+        .log-entry.error {
+            border-left-color: #f48771;
+            color: #f48771;
+        }
+        .log-timestamp {
+            color: #858585;
+            margin-right: 8px;
+        }
+        .log-level {
+            display: inline-block;
+            width: 60px;
+            text-align: right;
+            margin-right: 8px;
+            font-weight: bold;
+        }
+        .log-target {
+            color: #569cd6;
+            margin-right: 8px;
+        }
+        .log-source {
+            color: #ce9178;
+            margin-left: 8px;
+            font-size: 10px;
+        }
+        .auto-scroll {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #007acc;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            cursor: pointer;
+            font-size: 18px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        .auto-scroll.active {
+            background: #4ec9b0;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Guestbook Debug Logs</h1>
+        <div class="controls">
+            <div class="stats">
+                <span id="log-count">0</span> logs
+            </div>
+            <button onclick="clearLogs()">Clear Logs</button>
+            <button onclick="toggleAutoScroll()" id="auto-scroll-btn" class="auto-scroll active">↓</button>
+        </div>
+    </div>
+    <div class="logs-container" id="logs-container">
+        <div id="logs"></div>
+    </div>
+
+    <script>
+        let autoScroll = true;
+        let lastId = 0;
+        let pollInterval = null;
+
+        function formatLogEntry(entry) {
+            const levelClass = entry.level.toLowerCase();
+            const sourceBadge = entry.source === 'frontend' ? '<span class="log-source">[FE]</span>' : '<span class="log-source">[BE]</span>';
+            return `
+                <div class="log-entry ${levelClass}">
+                    <span class="log-timestamp">${entry.timestamp}</span>
+                    <span class="log-level">${entry.level}</span>
+                    <span class="log-target">[${entry.target}]</span>
+                    ${entry.message}
+                    ${sourceBadge}
+                </div>
+            `;
+        }
+
+        function addLogs(logs) {
+            const container = document.getElementById('logs');
+            logs.forEach(entry => {
+                container.insertAdjacentHTML('beforeend', formatLogEntry(entry));
+            });
+
+            if (autoScroll) {
+                const logsContainer = document.getElementById('logs-container');
+                logsContainer.scrollTop = logsContainer.scrollHeight;
+            }
+        }
+
+        async function fetchLogs() {
+            try {
+                const url = lastId > 0
+                    ? `/api/logs?since_id=${lastId}`
+                    : '/api/logs?limit=1000';
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.logs && data.logs.length > 0) {
+                    addLogs(data.logs);
+                    lastId = data.next_id;
+                }
+
+                document.getElementById('log-count').textContent = data.total;
+            } catch (error) {
+                console.error('Failed to fetch logs:', error);
+            }
+        }
+
+        async function clearLogs() {
+            if (!confirm('Clear all logs?')) return;
+
+            try {
+                await fetch('/api/clear');
+                document.getElementById('logs').innerHTML = '';
+                lastId = 0;
+                document.getElementById('log-count').textContent = '0';
+            } catch (error) {
+                console.error('Failed to clear logs:', error);
+            }
+        }
+
+        function toggleAutoScroll() {
+            autoScroll = !autoScroll;
+            const btn = document.getElementById('auto-scroll-btn');
+            btn.classList.toggle('active', autoScroll);
+            if (autoScroll) {
+                const logsContainer = document.getElementById('logs-container');
+                logsContainer.scrollTop = logsContainer.scrollHeight;
+            }
+        }
+
+        // Initial load
+        fetchLogs();
+
+        // Poll for new logs every 500ms
+        pollInterval = setInterval(fetchLogs, 500);
+    </script>
+</body>
+</html>
+

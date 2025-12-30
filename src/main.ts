@@ -1,7 +1,12 @@
+/** biome-ignore-all lint/suspicious/noExplicitAny: it's a display transformation, typing doesn't matter */
 import { invoke } from '@tauri-apps/api/core';
 import { errorHandler } from './error/errorHandler';
 import { startHIDManager } from './hid/HIDManager';
 import { soundManager } from './sound/soundManager';
+import { initDebugLogger } from './debugLogger';
+
+// Initialize debug logging (only works in debug builds)
+initDebugLogger();
 
 interface config {
   server_url: string;
@@ -10,6 +15,7 @@ interface config {
   device_location: string;
   device_friendly_name: string;
   first_run: boolean;
+  camera_preview_enabled: boolean;
 }
 
 // Menu state management
@@ -27,6 +33,7 @@ function initializeMenu() {
   const menuModal = document.getElementById('menu-modal');
   const manualEntryBtn = document.getElementById('manual-entry-btn');
   const showConfigBtn = document.getElementById('show-config-btn');
+  const resetDeviceBtn = document.getElementById('reset-device-btn');
   const restartApplianceBtn = document.getElementById('restart-appliance-btn');
 
   if (!menuTrigger || !menuModal) return;
@@ -126,21 +133,12 @@ function initializeMenu() {
     }
   });
 
-  // Add test logging button
-  const testLoggingBtn = document.getElementById('test-logging-btn');
-  testLoggingBtn?.addEventListener('click', async () => {
-    console.log('Test Logging clicked');
+  // Reset device button handler
+  resetDeviceBtn?.addEventListener('click', () => {
+    console.log('Reset Device clicked');
     soundManager.playBeep(700, 120);
-    try {
-      await invoke('test_logging');
-      console.log('Test logging completed');
-    } catch (error) {
-      console.error('Test logging failed:', error);
-      const errorMsg =
-        error instanceof Error ? error.message : 'Test logging failed';
-      errorHandler.handleApplicationError('system', errorMsg, 'medium');
-    }
     closeMenu();
+    openResetConfirmation();
   });
 }
 
@@ -372,9 +370,45 @@ async function openConfig() {
     });
 
     try {
+      // Load app version
+      try {
+        const version = await invoke<string>('get_app_version');
+        const versionElement = document.getElementById('config-app-version');
+        if (versionElement) {
+          versionElement.textContent = version;
+        }
+      } catch (error) {
+        console.error('Failed to load app version:', error);
+        const versionElement = document.getElementById('config-app-version');
+        if (versionElement) {
+          versionElement.textContent = 'Error loading';
+        }
+      }
+
+      // Set runtime environment (dev or release)
+      const runtimeEnvElement = document.getElementById('config-runtime-env');
+      if (runtimeEnvElement) {
+        // In Vite, import.meta.env.DEV is true in dev mode, false in production
+        // import.meta.env.MODE is 'development' or 'production'
+        // Check for dev mode using Vite's environment variables
+        let isDev = false;
+        try {
+          // Access Vite's env through type assertion
+          const env = (import.meta as { env?: { DEV?: boolean; MODE?: string } }).env;
+          isDev = env?.DEV === true || env?.MODE === 'development';
+        } catch {
+          // Fallback: assume production if env is not available
+          isDev = false;
+        }
+        runtimeEnvElement.textContent = isDev ? 'Development' : 'Release';
+      }
+
       // Load configuration data
       const config: config = await invoke('get_full_config');
       updateConfigDisplay(config);
+
+      // Initialize camera preview toggle
+      initializeCameraPreviewToggle(config);
     } catch (error) {
       console.error('Failed to load config:', error);
       const errorMsg =
@@ -399,6 +433,118 @@ function closeConfig() {
   if (configModal && isConfigOpen) {
     isConfigOpen = false;
     configModal.classList.remove('active');
+  }
+}
+
+// Reset device confirmation modal functions
+let isResetConfirmationOpen = false;
+let resetModalListeners: { element: HTMLElement; event: string; handler: EventListener | ((e: KeyboardEvent) => void) }[] = [];
+
+function openResetConfirmation() {
+  const resetModal = document.getElementById('reset-confirmation-modal');
+  if (resetModal && !isResetConfirmationOpen) {
+    isResetConfirmationOpen = true;
+    resetModal.classList.add('active');
+
+    // Focus management for accessibility
+    resetModal.focus();
+
+    // Set up event listeners for the confirmation modal
+    const closeBtn = document.getElementById('close-reset-confirmation-btn');
+    const cancelBtn = document.getElementById('cancel-reset-btn');
+    const confirmBtn = document.getElementById('confirm-reset-btn');
+
+    // Close button handler
+    if (closeBtn) {
+      const handler = () => closeResetConfirmation();
+      closeBtn.addEventListener('click', handler);
+      resetModalListeners.push({ element: closeBtn, event: 'click', handler });
+    }
+
+    // Cancel button handler
+    if (cancelBtn) {
+      const handler = () => closeResetConfirmation();
+      cancelBtn.addEventListener('click', handler);
+      resetModalListeners.push({ element: cancelBtn, event: 'click', handler });
+    }
+
+    // Confirm button handler
+    if (confirmBtn) {
+      const handler = async () => {
+        await handleDeviceReset();
+      };
+      confirmBtn.addEventListener('click', handler);
+      resetModalListeners.push({ element: confirmBtn, event: 'click', handler });
+    }
+
+    // Close on outside click
+    const outsideClickHandler = (e: Event) => {
+      if (e.target === resetModal) {
+        closeResetConfirmation();
+      }
+    };
+    resetModal.addEventListener('click', outsideClickHandler);
+    resetModalListeners.push({ element: resetModal, event: 'click', handler: outsideClickHandler });
+
+    // Close on Escape key
+    const escapeHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closeResetConfirmation();
+      }
+    };
+    resetModal.addEventListener('keydown', escapeHandler);
+    resetModalListeners.push({ element: resetModal, event: 'keydown', handler: escapeHandler });
+  }
+}
+
+function closeResetConfirmation() {
+  const resetModal = document.getElementById('reset-confirmation-modal');
+  if (resetModal && isResetConfirmationOpen) {
+    // Remove all event listeners
+    resetModalListeners.forEach(({ element, event, handler }) => {
+      element.removeEventListener(event, handler as EventListener);
+    });
+    resetModalListeners = [];
+
+    isResetConfirmationOpen = false;
+    resetModal.classList.remove('active');
+  }
+}
+
+async function handleDeviceReset() {
+  const confirmBtn = document.getElementById('confirm-reset-btn');
+  if (!confirmBtn) return;
+
+  // Store original text for potential error recovery
+  const originalText = confirmBtn.textContent;
+
+  try {
+    // Show user feedback that reset is in progress
+    confirmBtn.textContent = 'Resetting...';
+    (confirmBtn as HTMLButtonElement).disabled = true;
+
+    // Call the Tauri reset device function
+    await invoke('reset_device_command');
+    console.log('Device reset completed successfully');
+
+    // Show success feedback
+    confirmBtn.style.backgroundColor = '#00aa00';
+    confirmBtn.textContent = 'Reset Complete';
+
+    // Close the confirmation modal after a brief delay
+    setTimeout(() => {
+      closeResetConfirmation();
+    }, 2000);
+
+  } catch (error) {
+    console.error('Device reset failed:', error);
+    const errorMsg = error instanceof Error ? error.message : 'Device reset failed';
+    errorHandler.handleApplicationError('system', errorMsg, 'medium');
+
+    // Reset button state on error
+    confirmBtn.textContent = originalText;
+    (confirmBtn as HTMLButtonElement).disabled = false;
+    confirmBtn.style.backgroundColor = '';
   }
 }
 
@@ -436,6 +582,10 @@ const configFieldMap: Record<keyof config, {
     id: 'config-first-run',
     transform: (v: boolean) => v ? 'Yes' : 'No'
   },
+  camera_preview_enabled: {
+    id: 'config-camera-preview-enabled',
+    transform: (v: boolean) => v ? 'Yes' : 'No'
+  },
 };
 
 function updateConfigDisplay(config: config) {
@@ -449,9 +599,67 @@ function updateConfigDisplay(config: config) {
     const rawValue = (config as any)[key];
     element.textContent = transform ? transform(rawValue) : String(rawValue);
   });
+
+  // Update camera preview toggle separately
+  updateCameraPreviewToggle(config.camera_preview_enabled);
 }
 
-function showEntrySuccess() {
+function initializeCameraPreviewToggle(config: config) {
+  const toggleBtn = document.getElementById('camera-preview-toggle');
+  if (!toggleBtn) return;
+
+  // Set initial state
+  updateCameraPreviewToggle(config.camera_preview_enabled);
+
+  // Add click handler
+  toggleBtn.addEventListener('click', async () => {
+    try {
+      const newValue = !config.camera_preview_enabled;
+      await invoke('set_camera_preview_enabled', { enabled: newValue });
+
+      // Reload config to get updated value
+      const updatedConfig: config = await invoke('get_full_config');
+      updateCameraPreviewToggle(updatedConfig.camera_preview_enabled);
+
+      // Update camera video display based on new setting
+      updateCameraVideoDisplay(updatedConfig.camera_preview_enabled);
+
+      soundManager.playBeep(700, 120);
+    } catch (error) {
+      console.error('Failed to toggle camera preview:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Failed to toggle camera preview';
+      errorHandler.handleApplicationError('config', errorMsg, 'medium');
+    }
+  });
+}
+
+function updateCameraPreviewToggle(enabled: boolean) {
+  const toggleBtn = document.getElementById('camera-preview-toggle');
+  const toggleText = document.getElementById('camera-preview-toggle-text');
+
+  if (toggleBtn && toggleText) {
+    if (enabled) {
+      toggleBtn.classList.add('enabled');
+      toggleText.textContent = 'Enabled';
+    } else {
+      toggleBtn.classList.remove('enabled');
+      toggleText.textContent = 'Disabled';
+    }
+  }
+}
+
+// Shared reset function for consistent messaging
+function resetEntryDisplay() {
+  const entryData = document.getElementById('entry-data');
+  if (entryData) {
+    entryData.innerHTML =
+      '<p>Swipe your card or scan your barcode to record an entry...</p>';
+  }
+  // Remove any state classes from body
+  document.body.classList.remove('success-state', 'error-state');
+}
+
+export function showEntrySuccess() {
   // Update the main display to show success
   const entryData = document.getElementById('entry-data');
   if (entryData) {
@@ -460,14 +668,12 @@ function showEntrySuccess() {
     document.body.classList.add('success-state');
     // Reset after 3 seconds
     setTimeout(() => {
-      entryData.innerHTML =
-        '<p>Swipe your card or scan your barcode to record an entry...</p>';
-      document.body.classList.remove('success-state');
+      resetEntryDisplay();
     }, 3000);
   }
 }
 
-function showEntryError() {
+export function showEntryError() {
   // Update the main display to show error
   const entryData = document.getElementById('entry-data');
   if (entryData) {
@@ -476,9 +682,7 @@ function showEntryError() {
     document.body.classList.add('error-state');
     // Reset after 3 seconds
     setTimeout(() => {
-      entryData.innerHTML =
-        '<p>Swipe your card or scan your barcode to record an entry...</p>';
-      document.body.classList.remove('error-state');
+      resetEntryDisplay();
     }, 3000);
   }
 }
@@ -502,6 +706,69 @@ async function scheduleHeartbeat() {
   }, interval);
 }
 
+/**
+ * Initialize camera video display based on config setting
+ */
+async function initializeCameraVideo() {
+  try {
+    const config: config = await invoke('get_full_config');
+    updateCameraVideoDisplay(config.camera_preview_enabled);
+  } catch (error) {
+    console.error('Failed to load config for camera video:', error);
+    // Default to hidden if config can't be loaded
+    updateCameraVideoDisplay(false);
+  }
+}
+
+/**
+ * Update camera video display based on enabled setting
+ */
+function updateCameraVideoDisplay(enabled: boolean) {
+  const videoContainer = document.getElementById('camera-video-container');
+  const videoStream = document.getElementById('camera-video-stream') as HTMLImageElement;
+
+  if (!videoContainer || !videoStream) {
+    return;
+  }
+
+  if (!enabled) {
+    // Hide the container
+    videoContainer.style.display = 'none';
+    return;
+  }
+
+  // Set up MJPEG stream URL
+  const streamUrl = 'http://127.0.0.1:7313/video';
+  videoStream.src = streamUrl;
+
+  // Show the container
+  videoContainer.style.display = 'block';
+
+  // Add some basic styling for the video
+  videoContainer.style.cssText += `
+    margin-top: -50px;
+    text-align: center;
+    max-width: 100%;
+    overflow: visible;
+  `;
+  videoStream.style.cssText += `
+    max-width: 100%;
+    max-height: 300px;
+    border: 2px solid #0066cc;
+    border-radius: 8px;
+    transform: rotate(-90deg);
+    transform-origin: center center;
+  `;
+
+  // Handle stream errors gracefully
+  videoStream.onerror = () => {
+    console.warn('[CameraVideo] Failed to load video stream - sidecar may not be running');
+    videoContainer.style.display = 'none';
+  };
+
+  console.log('[CameraVideo] Video stream initialized');
+}
+
 (async () => {
   const config: config = await invoke('get_full_config');
   console.log(config);
@@ -514,6 +781,9 @@ async function scheduleHeartbeat() {
   initializeMenu();
   initializeManualEntry(); // Initialize manual entry functionality
   initializeConfig(); // Initialize config modal functionality
+
+  // Initialize camera video display (based on config setting)
+  await initializeCameraVideo();
 
   // Heartbeat cron task: every 10 +/- 5 minutes
   scheduleHeartbeat();
