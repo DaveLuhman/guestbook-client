@@ -153,7 +153,8 @@ install_dependencies() {
     python3-flask \
     python3-picamera2 \
     python3-psutil \
-    libgfortran5
+    libgfortran5 \
+    file unzip
 
     # Install zbar packages - handle Trixie compatibility
     # In Trixie, zbar-tools depends on libzbar0t64, not libzbar0
@@ -323,6 +324,14 @@ install_sidecar() {
         local TEMP_FILE=$(mktemp)
         if curl -fsSL "${SIDECAR_SCRIPT_URL}" -o "${TEMP_FILE}"; then
             # Check if downloaded file is a zip archive
+            # Verify required commands are available
+            if ! command -v file &> /dev/null || ! command -v unzip &> /dev/null; then
+                echo " ! Error: 'file' and/or 'unzip' commands not found. Cannot extract zip archive."
+                echo "   Please ensure these packages are installed: file unzip"
+                rm -f "${TEMP_FILE}"
+                continue
+            fi
+            
             if file "${TEMP_FILE}" | grep -q "Zip archive"; then
                 echo " + Extracting zip archive..."
                 local TEMP_DIR=$(mktemp -d)
