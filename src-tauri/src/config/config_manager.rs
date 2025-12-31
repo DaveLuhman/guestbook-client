@@ -21,7 +21,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            server_url: Some("http://localhost:3001/api/v1".to_string()),
+            server_url: None,
             server_token: None,
             device_id: Some(compute_device_id()),
             device_location: None,
@@ -156,7 +156,7 @@ impl ConfigManager {
             .map_err(|e: PoisonError<_>| {
                 let msg = format!("Mutex poisoned: {}", e);
                 log::error!("{}", msg);
-                io::Error::new(io::ErrorKind::Other, msg)
+                io::Error::other(msg)
             })?;
 
         // Ensure parent directory exists
@@ -224,6 +224,11 @@ impl ConfigManager {
 
     pub fn set_server_token(&self, server_token: String) {
         self.set(server_token, |c, v| c.server_token = Some(v));
+    }
+
+    #[allow(dead_code)]
+    pub fn set_server_url(&self, server_url: String) {
+        self.set(server_url, |c, v| c.server_url = Some(v));
     }
 
     pub fn set_first_run(&self, first_run: bool) {

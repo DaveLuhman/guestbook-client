@@ -11,17 +11,19 @@
     <div class="container">
         <h1>Welcome to the Guestbook!</h1>
         <div class="row">
-            <h5>Please enter the device name and location to get started.</h5>
+            <h5>Please enter the device name, location, and server URL to get started.</h5>
         </div>
         <div class="row">
             <h5 id="error-text" class="error"></h5>
         </div>
         <div class="row">
-            <input type="text" id="device_name" placeholder="Device Name" />
-            <input type="text" id="device_location" placeholder="Device Location" />
-            <button id="submit">Submit</button>
+            <div class="form-container">
+                <input type="text" id="device_name" placeholder="Device Name" />
+                <input type="text" id="device_location" placeholder="Device Location" />
+                <input type="text" id="server_url" placeholder="Server URL" />
+                <button type="button" id="submit">Submit</button>
+            </div>
         </div>
     </div>
-    <script type="module" src="./firstRun.js"></script>
 </body>
 </html>

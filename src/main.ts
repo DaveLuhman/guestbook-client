@@ -244,6 +244,24 @@ function initializeManualEntry() {
           error instanceof Error
             ? error.message
             : 'Manual entry submission failed';
+        
+        // Check if device is orphaned
+        if (errorMsg.includes('Device Orphaned') || errorMsg.includes('orphaned')) {
+          errorHandler.handleApplicationError('keypad', errorMsg, 'high');
+          // Try to automatically recover by clearing orphaned state and triggering re-registration
+          try {
+            const config: config = await invoke('get_full_config');
+            if (!config.first_run) {
+              console.log('Device orphaned during entry - clearing state and triggering re-registration');
+              await invoke('clear_orphaned_state_command');
+              await invoke('first_run_trigger');
+              return; // Exit - first-run screen will handle re-registration
+            }
+          } catch (recoveryError) {
+            console.error('Failed to recover from orphaned state:', recoveryError);
+          }
+        }
+        
         errorHandler.handleApplicationError('keypad', errorMsg, 'high');
         showEntryError();
       }
@@ -539,6 +557,20 @@ async function handleDeviceReset() {
   } catch (error) {
     console.error('Device reset failed:', error);
     const errorMsg = error instanceof Error ? error.message : 'Device reset failed';
+    
+    // Note: Reset should succeed even for orphaned devices (backend handles 403 gracefully)
+    // But if there's an error, log it but still show success since local config is cleared
+    if (errorMsg.includes('403') || errorMsg.includes('orphaned')) {
+      // Device was orphaned - reset still succeeded locally
+      console.log('Device was orphaned, but local reset completed successfully');
+      confirmBtn.style.backgroundColor = '#00aa00';
+      confirmBtn.textContent = 'Reset Complete';
+      setTimeout(() => {
+        closeResetConfirmation();
+      }, 2000);
+      return;
+    }
+    
     errorHandler.handleApplicationError('system', errorMsg, 'medium');
 
     // Reset button state on error
@@ -648,15 +680,29 @@ function updateCameraPreviewToggle(enabled: boolean) {
   }
 }
 
+// Track if entry feedback is currently showing to prevent premature resets
+let isEntryFeedbackShowing = false;
+
 // Shared reset function for consistent messaging
 function resetEntryDisplay() {
   const entryData = document.getElementById('entry-data');
   if (entryData) {
-    entryData.innerHTML =
-      '<p>Swipe your card or scan your barcode to record an entry...</p>';
+    // Only reset to default if network is available
+    // If network is unavailable, keep the warning message
+    const isNetworkUnavailable = document.body.classList.contains('network-unavailable-state');
+    
+    if (!isNetworkUnavailable) {
+      entryData.innerHTML =
+        '<p>Swipe your card or scan your barcode to record an entry...</p>';
+    } else {
+      // Network is down, restore the warning message
+      entryData.innerHTML =
+        '<p>The network is unavailable and entries cannot be recorded at this time.</p>';
+    }
   }
-  // Remove any state classes from body
+  // Remove success/error state classes, but preserve network-unavailable-state
   document.body.classList.remove('success-state', 'error-state');
+  isEntryFeedbackShowing = false;
 }
 
 export function showEntrySuccess() {
@@ -666,6 +712,7 @@ export function showEntrySuccess() {
     entryData.innerHTML = '<p>Entry submitted successfully!</p>';
     // Change screen color to green for success using CSS class
     document.body.classList.add('success-state');
+    isEntryFeedbackShowing = true;
     // Reset after 3 seconds
     setTimeout(() => {
       resetEntryDisplay();
@@ -680,6 +727,7 @@ export function showEntryError() {
     entryData.innerHTML = '<p>Error submitting entry. Please try again.</p>';
     // Change screen color to red for error using CSS class
     document.body.classList.add('error-state');
+    isEntryFeedbackShowing = true;
     // Reset after 3 seconds
     setTimeout(() => {
       resetEntryDisplay();
@@ -704,6 +752,133 @@ async function scheduleHeartbeat() {
     }
     scheduleHeartbeat(); // Schedule next heartbeat
   }, interval);
+}
+
+/**
+ * Background network monitoring to detect API availability issues.
+ * When the network is unavailable, the background turns yellow and
+ * a warning message is displayed to the user.
+ */
+async function startNetworkMonitoring() {
+  let lastKnownAvailable: boolean | null = null;
+  let isOrphaned = false;
+  let lastKnownOrphaned = false;
+
+  const updateNetworkUI = (isAvailable: boolean, orphaned: boolean = false) => {
+    const entryData = document.getElementById('entry-data');
+
+    if (orphaned) {
+      // Device is orphaned - show appropriate message
+      document.body.classList.add('network-unavailable-state');
+      if (entryData && !isEntryFeedbackShowing) {
+        entryData.innerHTML =
+          '<p>This device has been removed from the server. Please reset and re-register.</p>';
+      }
+    } else if (isAvailable) {
+      // Clear network warning state
+      document.body.classList.remove('network-unavailable-state');
+
+      // Only reset to default text if:
+      // 1. We were previously in a network error state, AND
+      // 2. Entry feedback is not currently showing (to avoid erasing active feedback)
+      if (lastKnownAvailable === false && entryData && !isEntryFeedbackShowing) {
+        entryData.innerHTML =
+          '<p>Swipe your card or scan your barcode to record an entry...</p>';
+      }
+    } else {
+      // Apply network warning state
+      document.body.classList.add('network-unavailable-state');
+
+      // Only update message if entry feedback is not currently showing
+      // (to avoid erasing active success/error feedback)
+      if (entryData && !isEntryFeedbackShowing) {
+        entryData.innerHTML =
+          '<p>The network is unavailable and entries cannot be recorded at this time.</p>';
+      }
+    }
+  };
+
+  const performCheck = async () => {
+    try {
+      const isAvailable = await invoke<boolean>(
+        'check_network_availability_command'
+      );
+
+      // Device is valid and network is available
+      if (isOrphaned) {
+        // Device was orphaned but now appears valid - clear orphaned state
+        console.log('Device status changed from orphaned to valid');
+        isOrphaned = false;
+        // Force UI update to clear orphaned warning
+        lastKnownOrphaned = true;
+        lastKnownAvailable = null; // Reset to force UI refresh
+      }
+
+      // Update UI if availability or orphaned state changed
+      if (isAvailable !== lastKnownAvailable || isOrphaned !== lastKnownOrphaned) {
+        updateNetworkUI(isAvailable, false);
+        lastKnownAvailable = isAvailable;
+        lastKnownOrphaned = false;
+      }
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      
+      // Check if device is orphaned (403 response)
+      if (errorMsg === 'ORPHANED') {
+        console.warn('Device detected as orphaned during network check');
+        const wasOrphaned = isOrphaned;
+        isOrphaned = true;
+        
+        // Update UI if orphaned state changed
+        if (!wasOrphaned || lastKnownOrphaned !== isOrphaned) {
+          updateNetworkUI(false, true);
+          lastKnownOrphaned = true;
+          // Reset lastKnownAvailable to force UI refresh when orphaned state clears
+          lastKnownAvailable = null;
+        }
+        
+        // Check if we should automatically trigger re-registration
+        try {
+          const config: config = await invoke('get_full_config');
+          if (!config.first_run) {
+            // Device is configured but orphaned - clear state and trigger re-registration
+            console.log('Clearing orphaned state and triggering re-registration');
+            await invoke('clear_orphaned_state_command');
+            await invoke('first_run_trigger');
+            // Exit monitoring - first-run screen will handle re-registration
+            return;
+          }
+        } catch (configError) {
+          console.error('Failed to check config for orphaned recovery:', configError);
+        }
+        
+        errorHandler.handleApplicationError('network', 'Device Orphaned - This device has been removed from the server', 'high');
+      } else {
+        // Other network errors - clear orphaned state if it was set
+        if (isOrphaned) {
+          isOrphaned = false;
+          lastKnownOrphaned = true; // Mark as changed to trigger UI update
+          lastKnownAvailable = null; // Reset to force UI refresh
+        }
+        
+        console.error('Network availability check failed', e);
+        errorHandler.handleApplicationError('network', errorMsg, 'medium');
+
+        // Update UI if state changed
+        if (lastKnownAvailable !== false || lastKnownOrphaned) {
+          updateNetworkUI(false, false);
+          lastKnownAvailable = false;
+          lastKnownOrphaned = false;
+        }
+      }
+    }
+  };
+
+  // Initial check
+  await performCheck();
+
+  // Check every 30 seconds
+  setInterval(performCheck, 30 * 1000);
 }
 
 /**
@@ -772,6 +947,25 @@ function updateCameraVideoDisplay(enabled: boolean) {
 (async () => {
   const config: config = await invoke('get_full_config');
   console.log(config);
+  
+  // Check for orphaned device state on boot if device is already configured
+  if (!config.first_run) {
+    try {
+      await invoke<boolean>('check_network_availability_command');
+      // If check succeeds, device is valid - continue with normal startup
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      // Check if device is orphaned (403 response)
+      if (errorMsg === 'ORPHANED') {
+        console.warn('Device appears to be orphaned - clearing state and triggering re-registration');
+        await invoke('clear_orphaned_state_command');
+        await invoke('first_run_trigger');
+        // Exit early - first-run screen will handle re-registration
+        return;
+      }
+    }
+  }
+  
   if (config.first_run) {
     await invoke('first_run_trigger');
   }
@@ -784,6 +978,9 @@ function updateCameraVideoDisplay(enabled: boolean) {
 
   // Initialize camera video display (based on config setting)
   await initializeCameraVideo();
+
+  // Start background network monitoring
+  await startNetworkMonitoring();
 
   // Heartbeat cron task: every 10 +/- 5 minutes
   scheduleHeartbeat();

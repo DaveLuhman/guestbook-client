@@ -84,82 +84,18 @@ sudo apt install -y \
   libavutil-dev \
   libswresample-dev
 
-# Install linuxdeploy and plugins for AppImage bundling
-echo "📦 Installing linuxdeploy for AppImage bundling..."
-ARCH=$(uname -m)
-LINUXDEPLOY_VERSION="continuous"
+# Note: The camera sidecar is NOT bundled in the AppImage.
+# It must be installed separately to /opt/guestbook/sidecar/ during deployment.
+# The setup-script.sh handles sidecar installation.
 
-# Detect architecture
-case "$ARCH" in
-  x86_64)
-    LINUXDEPLOY_ARCH="x86_64"
-    ;;
-  aarch64|arm64)
-    LINUXDEPLOY_ARCH="aarch64"
-    ;;
-  *)
-    echo "⚠️  Warning: Unsupported architecture $ARCH for linuxdeploy. AppImage bundling may fail."
-    LINUXDEPLOY_ARCH=""
-    ;;
-esac
-
-if [ -n "$LINUXDEPLOY_ARCH" ]; then
-  # Create directory for linuxdeploy
-  LINUXDEPLOY_DIR="$HOME/.local/bin"
-  mkdir -p "$LINUXDEPLOY_DIR"
-
-  # Download linuxdeploy
-  LINUXDEPLOY_URL="https://github.com/linuxdeploy/linuxdeploy/releases/download/${LINUXDEPLOY_VERSION}/linuxdeploy-${LINUXDEPLOY_ARCH}.AppImage"
-  echo "📥 Downloading linuxdeploy from $LINUXDEPLOY_URL..."
-  wget -q "$LINUXDEPLOY_URL" -O "$LINUXDEPLOY_DIR/linuxdeploy-${LINUXDEPLOY_ARCH}.AppImage" || {
-    echo "❌ Failed to download linuxdeploy. AppImage bundling may not work."
-    LINUXDEPLOY_ARCH=""
-  }
-
-  if [ -n "$LINUXDEPLOY_ARCH" ]; then
-    chmod +x "$LINUXDEPLOY_DIR/linuxdeploy-${LINUXDEPLOY_ARCH}.AppImage"
-
-    # Create symlink if it doesn't exist
-    if [ ! -f "$LINUXDEPLOY_DIR/linuxdeploy.AppImage" ]; then
-      ln -s "linuxdeploy-${LINUXDEPLOY_ARCH}.AppImage" "$LINUXDEPLOY_DIR/linuxdeploy.AppImage"
-    fi
-
-    # Download linuxdeploy plugins
-    echo "📥 Downloading linuxdeploy plugins..."
-
-    # GTK plugin
-    GTK_PLUGIN_URL="https://github.com/linuxdeploy/linuxdeploy-plugin-gtk/releases/download/${LINUXDEPLOY_VERSION}/linuxdeploy-plugin-gtk-${LINUXDEPLOY_ARCH}.AppImage"
-    wget -q "$GTK_PLUGIN_URL" -O "$LINUXDEPLOY_DIR/linuxdeploy-plugin-gtk.AppImage" || echo "⚠️  Warning: Failed to download GTK plugin"
-    if [ -f "$LINUXDEPLOY_DIR/linuxdeploy-plugin-gtk.AppImage" ]; then
-      chmod +x "$LINUXDEPLOY_DIR/linuxdeploy-plugin-gtk.AppImage"
-    fi
-
-    # AppStream plugin (optional but recommended)
-    APPSTREAM_PLUGIN_URL="https://github.com/linuxdeploy/linuxdeploy-plugin-appstream/releases/download/${LINUXDEPLOY_VERSION}/linuxdeploy-plugin-appstream-${LINUXDEPLOY_ARCH}.AppImage"
-    wget -q "$APPSTREAM_PLUGIN_URL" -O "$LINUXDEPLOY_DIR/linuxdeploy-plugin-appstream.AppImage" || echo "⚠️  Warning: Failed to download AppStream plugin"
-    if [ -f "$LINUXDEPLOY_DIR/linuxdeploy-plugin-appstream.AppImage" ]; then
-      chmod +x "$LINUXDEPLOY_DIR/linuxdeploy-plugin-appstream.AppImage"
-    fi
-
-    # Add to PATH if not already there
-    if [[ ":$PATH:" != *":$LINUXDEPLOY_DIR:"* ]]; then
-      echo "" >> ~/.bashrc
-      echo "# Add linuxdeploy to PATH" >> ~/.bashrc
-      echo "export PATH=\"\$PATH:$LINUXDEPLOY_DIR\"" >> ~/.bashrc
-      export PATH="$PATH:$LINUXDEPLOY_DIR"
-      echo "✅ Added linuxdeploy to PATH (also added to ~/.bashrc for future sessions)"
-    fi
-
-    echo "✅ linuxdeploy installed successfully"
-  fi
-else
-  echo "⚠️  Skipping linuxdeploy installation due to unsupported architecture"
-fi
-
+echo ""
 echo "✅ Tauri dependencies installation complete!"
 echo ""
 echo "📋 Next steps:"
 echo "1. Run: npm install"
 echo "2. Run: npm run tauri build"
 echo ""
-echo "🔗 For more information, visit: https://tauri.app/v1/guides/getting-started/setup/linux"
+echo "ℹ️  Note: The camera sidecar is NOT bundled in the AppImage."
+echo "   It will be installed separately to /opt/guestbook/sidecar/ during deployment."
+echo ""
+echo "🔗 For more information, visit: https://tauri.app/v2/guides/getting-started/setup/linux"

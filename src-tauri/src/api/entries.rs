@@ -71,8 +71,13 @@ pub async fn submit_entry(
         // Try to extract error details from response body
         let error_body = response.text().await.unwrap_or_default();
         let error_msg = match status.as_u16() {
-            401 | 403 => {
-                log::error!("Authentication failed ({}): {}", status, error_body);
+            403 => {
+                // Device is orphaned - deleted from server but still has local config
+                log::error!("Device appears to be orphaned (403): {}", error_body);
+                "Device Orphaned - This device has been removed from the server. Please reset and re-register.".to_string()
+            }
+            401 => {
+                log::error!("Authentication failed (401): {}", error_body);
                 "Authentication Failed - Please check device configuration".to_string()
             }
             404 => {

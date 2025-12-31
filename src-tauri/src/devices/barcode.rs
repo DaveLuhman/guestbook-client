@@ -3,6 +3,11 @@ use std::time::{Duration, Instant};
 use tauri::{Emitter, WebviewWindow};
 use log::warn;
 use regex::Regex;
+use lazy_static::lazy_static;
+
+lazy_static! {
+    static ref BARCODE_REGEX: Regex = Regex::new(r"^\^(\d+)\^$").expect("Failed to compile barcode regex");
+}
 
 pub fn listen_to_barcode(device: HidDevice, window: WebviewWindow) {
     std::thread::spawn(move || {
@@ -30,17 +35,15 @@ pub fn listen_to_barcode(device: HidDevice, window: WebviewWindow) {
 
                     // Try to parse barcode in format ^1234567^
                     // First, try regex pattern for ^(\d+)^ format
-                    if let Ok(re) = Regex::new(r"^\^(\d+)\^$") {
-                        if let Some(caps) = re.captures(&scan_buffer.trim()) {
-                            if let Some(onecard) = caps.get(1) {
-                                let onecard_str = onecard.as_str();
-                                // Validate it's 7 digits (OneCard format)
-                                if onecard_str.len() == 7 {
-                                    // Barcode scanned successfully
-                                    window.emit("barcode-data", onecard_str.to_string()).ok();
-                                    scan_buffer.clear();
-                                    continue;
-                                }
+                    if let Some(caps) = BARCODE_REGEX.captures(scan_buffer.trim()) {
+                        if let Some(onecard) = caps.get(1) {
+                            let onecard_str = onecard.as_str();
+                            // Validate it's 7 digits (OneCard format)
+                            if onecard_str.len() == 7 {
+                                // Barcode scanned successfully
+                                window.emit("barcode-data", onecard_str.to_string()).ok();
+                                scan_buffer.clear();
+                                continue;
                             }
                         }
                     }

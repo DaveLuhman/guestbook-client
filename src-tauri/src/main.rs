@@ -10,7 +10,7 @@ mod logging;
 mod debug_logging;
 #[cfg(debug_assertions)]
 mod debug_server;
-use api::devices::{register_device, send_heartbeat, reset_device};
+use api::devices::{register_device, send_heartbeat, reset_device, check_network_availability, clear_orphaned_state};
 use config::config_manager::{get_full_config, set_camera_preview_enabled, ConfigManager};
 use devices::barcode::{listen_to_barcode, open_symbol_scanner};
 use devices::magtek::{listen_to_magtek, open_magtek_reader};
@@ -24,6 +24,9 @@ use std::sync::{Arc, Mutex};
 use std::process::{Command, Child, Stdio};
 use std::path::PathBuf;
 use std::io::{BufRead, BufReader};
+use url::Url;
+use once_cell::sync::Lazy;
+use regex::Regex;
 
 #[tauri::command]
 fn get_hid_devices() -> Vec<String> {
@@ -177,16 +180,113 @@ async fn first_run_trigger(app: tauri::AppHandle) {
     first_run_window.set_focus().unwrap();
 }
 
+// Compile regex once at startup instead of on every call
+static EVENT_HANDLER_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"on\w+\s*=").expect("valid regex"));
+
+/// Validates and sanitizes a server URL to prevent code injection and ensure it's a valid URL.
+/// Returns the sanitized URL or an error message.
+fn validate_and_sanitize_url(url: &str) -> Result<String, String> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return Err("Server URL is required".to_string());
+    }
+
+    // Check for dangerous patterns that could indicate code injection
+    let dangerous_patterns = [
+        "javascript:",
+        "data:",
+        "vbscript:",
+        "<script",
+        "</script>",
+        "<iframe",
+        "<object",
+        "<embed",
+        "eval(",
+        "expression(",
+    ];
+
+    let url_lower = trimmed.to_lowercase();
+    if dangerous_patterns.iter().any(|p| url_lower.contains(p)) {
+        return Err("Invalid URL: contains potentially dangerous content".to_string());
+    }
+
+    if EVENT_HANDLER_RE.is_match(trimmed) {
+        return Err("Invalid URL: contains event handler patterns".to_string());
+    }
+
+    // Add default scheme if missing
+    let url_to_parse = if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
+        format!("http://{}", trimmed)
+    } else {
+        trimmed.to_string()
+    };
+
+    let parsed = Url::parse(&url_to_parse)
+        .map_err(|e| format!("Invalid URL format: {}", e))?;
+
+    match parsed.scheme() {
+        "http" | "https" => {}
+        _ => return Err("Only http:// and https:// URLs are allowed".to_string()),
+    }
+
+    if parsed.host().is_none() {
+        return Err("URL must include a valid hostname".to_string());
+    }
+
+    // Extract all URL components before modifying the URL
+    // Explicitly preserve the port if it was specified in the original URL
+    // The port() method returns Some(port) only if explicitly set (non-default)
+    let port = parsed.port();
+    let scheme = parsed.scheme();
+    let host = parsed.host_str().ok_or_else(|| "Invalid host".to_string())?;
+    let mut path = parsed.path().to_string();
+    let query = parsed.query();
+    let fragment = parsed.fragment();
+
+    // Trim trailing slashes on the path (except root)
+    if path != "/" {
+        path = path.trim_end_matches('/').to_string();
+    }
+
+    // Reconstruct URL with explicit port preservation
+    let mut result = format!("{}://{}", scheme, host);
+    if let Some(port_num) = port {
+        result.push_str(&format!(":{}", port_num));
+    }
+    result.push_str(&path);
+    if let Some(q) = query {
+        result.push('?');
+        result.push_str(q);
+    }
+    if let Some(f) = fragment {
+        result.push('#');
+        result.push_str(f);
+    }
+
+    Ok(result)
+}
+
+#[tauri::command]
+async fn validate_and_sanitize_url_command(url: String) -> Result<String, String> {
+    validate_and_sanitize_url(&url)
+}
+
 #[tauri::command]
 async fn submit_first_run_config(
     config_manager: tauri::State<'_, ConfigManager>,
     device_name: String,
     device_location: String,
+    server_url: String,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
+    // Validate and sanitize the server URL
+    let sanitized_url = validate_and_sanitize_url(&server_url)?;
+
     let mut config = config_manager.get_config()?;
-    config.device_friendly_name = Some(device_name);
-    config.device_location = Some(device_location);
+    config.device_friendly_name = Some(device_name.trim().to_string());
+    config.device_location = Some(device_location.trim().to_string());
+    config.server_url = Some(sanitized_url);
     config.first_run = false;
     // Save config
     {
@@ -222,6 +322,14 @@ async fn send_heartbeat_command(
             Err(e)
         }
     }
+}
+
+/// IPC command to perform a lightweight network availability check.
+#[tauri::command]
+async fn check_network_availability_command(
+    config_manager: tauri::State<'_, ConfigManager>,
+) -> Result<bool, String> {
+    check_network_availability(config_manager).await
 }
 
 #[tauri::command]
@@ -392,6 +500,14 @@ async fn reset_device_command(
 }
 
 #[tauri::command]
+fn clear_orphaned_state_command(
+    config_manager: tauri::State<'_, ConfigManager>,
+) -> Result<(), String> {
+    log::info!("Clear orphaned state command received");
+    clear_orphaned_state(config_manager)
+}
+
+#[tauri::command]
 fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
@@ -436,9 +552,83 @@ async fn get_camera_sidecar_status(
     Ok(status)
 }
 
+/// Check if a camera is available on the system.
+/// For PCI-connected cameras (non-hot-swappable), this checks:
+/// - V4L2 devices (/dev/video*)
+/// - libcamera devices (for Raspberry Pi cameras)
+/// - sysfs video devices (/sys/class/video4linux/)
+fn check_camera_available() -> bool {
+    // Check for V4L2 devices (/dev/video*)
+    // Match names like "video0", "video1", etc. but not just "video"
+    if let Ok(entries) = std::fs::read_dir("/dev") {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if let Some(suffix) = name.strip_prefix("video") {
+                    if !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()) {
+                        log::info!("Found V4L2 camera device: {:?}", path);
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    // Check for libcamera devices (Raspberry Pi cameras)
+    // Try using libcamera-hello --list-cameras command with timeout protection
+    // Use timeout command if available, otherwise try direct call (may hang)
+    if Command::new("timeout").arg("--version").output().is_ok() {
+        // Use timeout command to prevent hanging
+        if let Ok(output) = Command::new("timeout")
+            .arg("5") // 5 second timeout
+            .arg("libcamera-hello")
+            .arg("--list-cameras")
+            .output()
+        {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                // If the command succeeds and outputs camera info, we have a camera
+                if !stdout.trim().is_empty() && stdout.contains("Available cameras") {
+                    log::info!("Found libcamera device(s)");
+                    return true;
+                }
+            }
+        }
+    } else {
+        // Fallback: try direct call (may hang, but better than nothing)
+        // Only proceed if libcamera-hello exists
+        if Command::new("libcamera-hello").arg("--version").output().is_ok() {
+            log::debug!("timeout command not available, trying libcamera-hello directly (may hang)");
+            if let Ok(output) = Command::new("libcamera-hello")
+                .arg("--list-cameras")
+                .output()
+            {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    if !stdout.trim().is_empty() && stdout.contains("Available cameras") {
+                        log::info!("Found libcamera device(s)");
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    // Check sysfs for video devices (/sys/class/video4linux/)
+    if let Ok(entries) = std::fs::read_dir("/sys/class/video4linux") {
+        let count = entries.count();
+        if count > 0 {
+            log::info!("Found {} video device(s) in sysfs", count);
+            return true;
+        }
+    }
+
+    log::warn!("No camera devices detected on the system");
+    false
+}
+
 #[tauri::command]
 async fn start_camera_sidecar(
-    app: tauri::AppHandle,
     scanner: tauri::State<'_, ScannerProc>,
     scanner_error: tauri::State<'_, ScannerError>,
 ) -> Result<(), String> {
@@ -456,57 +646,58 @@ async fn start_camera_sidecar(
         }
     }
 
-    log::info!("Starting camera sidecar...");
+    // Check if camera is available before starting sidecar
+    log::info!("Checking for camera availability...");
+    if !check_camera_available() {
+        log::warn!("No camera detected on system. Skipping camera sidecar startup.");
+        return Err("No camera detected on system. Camera sidecar will not start.".to_string());
+    }
+
+    log::info!("Camera detected, starting camera sidecar...");
 
     // Find the camera sidecar binary/script
     // Priority order:
-    // 1. Bundled binary in AppImage resources (production)
-    // 2. Development paths (Python script)
-    // 3. System installation path
+    // 1. /opt/guestbook/sidecar/ (primary production location)
+    // 2. /usr/share/guestbook-kiosk/sidecar/ (alternative production location)
+    // 3. Development paths (Python script for local development)
+    //
+    // Note: The sidecar is NOT bundled in the AppImage. It must be installed separately
+    // via the setup script to /opt/guestbook/sidecar/ (preferred) or /usr/share/guestbook-kiosk/sidecar/
 
     let mut script_path = None;
 
-    // Try to find bundled binary in AppImage resources first
-    // In Tauri, resources are bundled and accessible via the resource directory
-    if let Ok(resource_dir) = app.path().resource_dir() {
-        let bundled_binary = resource_dir.join("camera_sidecar");
-        if bundled_binary.exists() && bundled_binary.is_file() {
-            log::info!("Found bundled camera sidecar binary at: {:?}", bundled_binary);
-            script_path = Some(bundled_binary);
-        } else {
-            log::debug!("Bundled binary not found at: {:?}", bundled_binary);
-        }
-    } else {
-        log::debug!("Could not access resource directory (may not be in AppImage)");
-    }
+    let search_paths = vec![
+        // Primary production location: /opt/guestbook/sidecar/ (check binary first, then Python script)
+        PathBuf::from("/opt/guestbook/sidecar/camera_sidecar"),
+        PathBuf::from("/opt/guestbook/sidecar/camera_sidecar.py"),
+        // Alternative production location: /usr/share/guestbook-kiosk/sidecar/
+        PathBuf::from("/usr/share/guestbook-kiosk/sidecar/camera_sidecar"),
+        PathBuf::from("/usr/share/guestbook-kiosk/sidecar/camera_sidecar.py"),
+        // Development paths (Python script for local development)
+        PathBuf::from("sidecar/camera_sidecar.py"),
+        PathBuf::from("../sidecar/camera_sidecar.py"),
+        PathBuf::from("../../sidecar/camera_sidecar.py"),
+    ];
 
-    // If not found in resources, try development paths (Python script)
-    if script_path.is_none() {
-        let script_paths = vec![
-            // Development path (when running from project root)
-            PathBuf::from("sidecar/camera_sidecar.py"),
-            // Development path (when running from src-tauri/)
-            PathBuf::from("../sidecar/camera_sidecar.py"),
-            // Alternative development path
-            PathBuf::from("../../sidecar/camera_sidecar.py"),
-            // System installation path
-            PathBuf::from("/usr/share/guestbook-kiosk/sidecar/camera_sidecar.py"),
-        ];
-
-        for path in &script_paths {
-            if path.exists() {
-                script_path = Some(path.canonicalize().map_err(|e| {
-                    format!("Failed to canonicalize path {:?}: {}", path, e)
-                })?);
-                break;
-            }
+    for path in &search_paths {
+        if path.exists() {
+            script_path = Some(path.canonicalize().map_err(|e| {
+                format!("Failed to canonicalize path {:?}: {}", path, e)
+            })?);
+            log::debug!("Found camera sidecar at: {:?}", script_path);
+            break;
         }
     }
 
     let script_path = script_path.ok_or_else(|| {
-        format!(
-            "Could not find camera sidecar binary or script. Checked bundled resources and paths: sidecar/camera_sidecar.py, ../sidecar/camera_sidecar.py, /usr/share/guestbook-kiosk/sidecar/camera_sidecar.py"
-        )
+        "Could not find camera sidecar binary or script. \
+            Expected locations:\n\
+            - /opt/guestbook/sidecar/camera_sidecar (primary production location)\n\
+            - /usr/share/guestbook-kiosk/sidecar/camera_sidecar (alternative production)\n\
+            - sidecar/camera_sidecar.py (development)\n\
+            \n\
+            The camera sidecar must be installed separately via the setup script from the admin portal. \
+            Contact your administrator if the sidecar is missing.".to_string()
     })?;
 
     log::info!("Found camera sidecar at: {:?}", script_path);
@@ -542,13 +733,11 @@ async fn start_camera_sidecar(
         let stderr_reader = BufReader::new(stderr);
         let child_id = child.id();
         std::thread::spawn(move || {
-            for line in stderr_reader.lines() {
-                if let Ok(line) = line {
-                    log::error!("[Camera Sidecar PID {}] {}", child_id, line);
-                    // Store last error line for frontend access
-                    if let Ok(mut err_guard) = error_state.lock() {
-                        *err_guard = Some(line.clone());
-                    }
+            for line in stderr_reader.lines().map_while(Result::ok) {
+                log::error!("[Camera Sidecar PID {}] {}", child_id, line);
+                // Store last error line for frontend access
+                if let Ok(mut err_guard) = error_state.lock() {
+                    *err_guard = Some(line.clone());
                 }
             }
         });
@@ -559,10 +748,8 @@ async fn start_camera_sidecar(
         let stdout_reader = BufReader::new(stdout);
         let child_id = child.id();
         std::thread::spawn(move || {
-            for line in stdout_reader.lines() {
-                if let Ok(line) = line {
-                    log::info!("[Camera Sidecar PID {}] {}", child_id, line);
-                }
+            for line in stdout_reader.lines().map_while(Result::ok) {
+                log::info!("[Camera Sidecar PID {}] {}", child_id, line);
             }
         });
     }
@@ -662,7 +849,6 @@ fn main() {
         b
     };
     builder
-        .plugin(crabcamera::init())
         .manage(config_manager)
         .manage(hid_manager)
         .manage(scanner_proc)
@@ -679,12 +865,15 @@ fn main() {
             first_run_trigger,
             get_full_config,
             set_camera_preview_enabled,
+            validate_and_sanitize_url_command,
             submit_first_run_config,
             send_heartbeat_command,
+            check_network_availability_command,
             log_error,
             test_logging,
             restart_appliance,
             reset_device_command,
+            clear_orphaned_state_command,
             submit_swipe_entry,
             submit_barcode_entry,
             submit_manual_entry,
@@ -747,4 +936,4 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Tauri application");
-}
+    }

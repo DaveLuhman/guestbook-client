@@ -247,6 +247,14 @@ export class ErrorHandler {
         };
       }
 
+      if (lowerMessage.includes('device orphaned') || lowerMessage.includes('removed from the server')) {
+        return {
+          title: 'Device Orphaned',
+          body: 'This device has been removed from the server. Please reset and re-register.',
+          hint: 'Use the reset device option in the menu to re-register this device.'
+        };
+      }
+
       if (lowerMessage.includes('authentication failed') || lowerMessage.includes('check device configuration')) {
         return {
           title: 'Authentication Failed',
