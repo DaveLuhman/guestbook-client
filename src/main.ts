@@ -762,6 +762,7 @@ async function scheduleHeartbeat() {
 async function startNetworkMonitoring() {
   let lastKnownAvailable: boolean | null = null;
   let isOrphaned = false;
+  let lastKnownOrphaned = false;
 
   const updateNetworkUI = (isAvailable: boolean, orphaned: boolean = false) => {
     const entryData = document.getElementById('entry-data');
@@ -805,14 +806,19 @@ async function startNetworkMonitoring() {
 
       // Device is valid and network is available
       if (isOrphaned) {
-        // Device was orphaned but now appears valid (shouldn't happen, but handle gracefully)
+        // Device was orphaned but now appears valid - clear orphaned state
         console.log('Device status changed from orphaned to valid');
         isOrphaned = false;
+        // Force UI update to clear orphaned warning
+        lastKnownOrphaned = true;
+        lastKnownAvailable = null; // Reset to force UI refresh
       }
 
-      if (isAvailable !== lastKnownAvailable) {
+      // Update UI if availability or orphaned state changed
+      if (isAvailable !== lastKnownAvailable || isOrphaned !== lastKnownOrphaned) {
         updateNetworkUI(isAvailable, false);
         lastKnownAvailable = isAvailable;
+        lastKnownOrphaned = false;
       }
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : String(e);
@@ -820,7 +826,16 @@ async function startNetworkMonitoring() {
       // Check if device is orphaned (403 response)
       if (errorMsg === 'ORPHANED') {
         console.warn('Device detected as orphaned during network check');
+        const wasOrphaned = isOrphaned;
         isOrphaned = true;
+        
+        // Update UI if orphaned state changed
+        if (!wasOrphaned || lastKnownOrphaned !== isOrphaned) {
+          updateNetworkUI(false, true);
+          lastKnownOrphaned = true;
+          // Reset lastKnownAvailable to force UI refresh when orphaned state clears
+          lastKnownAvailable = null;
+        }
         
         // Check if we should automatically trigger re-registration
         try {
@@ -837,16 +852,23 @@ async function startNetworkMonitoring() {
           console.error('Failed to check config for orphaned recovery:', configError);
         }
         
-        updateNetworkUI(false, true);
         errorHandler.handleApplicationError('network', 'Device Orphaned - This device has been removed from the server', 'high');
       } else {
-        // Other network errors
+        // Other network errors - clear orphaned state if it was set
+        if (isOrphaned) {
+          isOrphaned = false;
+          lastKnownOrphaned = true; // Mark as changed to trigger UI update
+          lastKnownAvailable = null; // Reset to force UI refresh
+        }
+        
         console.error('Network availability check failed', e);
         errorHandler.handleApplicationError('network', errorMsg, 'medium');
 
-        if (lastKnownAvailable !== false) {
+        // Update UI if state changed
+        if (lastKnownAvailable !== false || lastKnownOrphaned) {
           updateNetworkUI(false, false);
           lastKnownAvailable = false;
+          lastKnownOrphaned = false;
         }
       }
     }
