@@ -81,11 +81,15 @@ export async function startHIDManager() {
   }
 
   // Listen for camera barcode events (custom window events)
-  window.addEventListener('camera-barcode-data', ((event: CustomEvent) => {
-    const onecard = event.detail?.payload;
+  window.addEventListener('camera-barcode-data', ((event: Event) => {
+    const customEvent = event as CustomEvent;
+    const onecard = customEvent.detail?.payload;
     if (onecard && typeof onecard === 'string') {
       // Process the same way as Tauri barcode-data events
-      processBarcodeData(onecard);
+      // Fire and forget - promise is properly tracked within processBarcodeData
+      processBarcodeData(onecard).catch((error) => {
+        console.error('Error processing camera barcode data:', error);
+      });
     }
   }) as EventListener);
 
@@ -107,54 +111,46 @@ export async function startHIDManager() {
         return;
       }
       updateScanData(onecard); // Show scanned value to user
-      // Submit immediately without blocking - handle response asynchronously
-      // This improves responsiveness by not waiting for HTTP response before showing feedback
-      invoke('submit_barcode_entry', { onecard })
-        .then(() => {
-          // Success - HTTP request completed with 2xx status
-          soundManager.playSuccess();
-          showEntrySuccess();
-        })
-        .catch(async (error) => {
-          // Error - non-2xx HTTP response or network error
-          console.error('Submit error:', error);
-          soundManager.playError();
-          // Extract error message - Tauri errors can be strings, Error objects, or custom objects
-          let errorMsg = 'Unknown barcode error';
-          if (typeof error === 'string') {
-            errorMsg = error;
-          } else if (error instanceof Error) {
-            errorMsg = error.message;
-          } else if (error && typeof error === 'object' && 'message' in error) {
-            errorMsg = String((error as { message: unknown }).message);
-          }
-          
-          // Check if device is orphaned
-          if (errorMsg.includes('Device Orphaned') || errorMsg.includes('orphaned')) {
-            errorHandler.handleApplicationError('barcode', errorMsg, 'high');
-            // Try to automatically recover by clearing orphaned state and triggering re-registration
-            try {
-              const config = await invoke<{ first_run: boolean }>('get_full_config');
-              if (!config.first_run) {
-                console.log('Device orphaned during entry - clearing state and triggering re-registration');
-                await invoke('clear_orphaned_state_command');
-                await invoke('first_run_trigger');
-                return; // Exit - first-run screen will handle re-registration
-              }
-            } catch (recoveryError) {
-              console.error('Failed to recover from orphaned state:', recoveryError);
-            }
-          }
-          
-          errorHandler.handleApplicationError('barcode', errorMsg, 'high');
-          showEntryError();
-        });
-      // Don't await - return immediately to allow UI to be responsive
+      // Submit the barcode data to the backend and await the result
+      // Note: Rust checks HTTP status code and returns Result<(), String>
+      // - If 2xx: Rust returns Ok(()), invoke resolves, we play success sound
+      // - If non-2xx or network error: Rust returns Err(String), invoke throws, catch block handles it
+      await invoke('submit_barcode_entry', { onecard });
+      // Only play success sound after receiving 2xx HTTP response (invoke resolved successfully)
+      soundManager.playSuccess();
+      showEntrySuccess();
     } catch (error) {
-      // This catch block handles synchronous errors (validation, etc.)
-      console.error('Process barcode error:', error);
+      // Error - non-2xx HTTP response or network error
+      console.error('Submit error:', error);
       soundManager.playError();
-      errorHandler.handleApplicationError('barcode', 'Failed to process barcode', 'high');
+      // Extract error message - Tauri errors can be strings, Error objects, or custom objects
+      let errorMsg = 'Unknown barcode error';
+      if (typeof error === 'string') {
+        errorMsg = error;
+      } else if (error instanceof Error) {
+        errorMsg = error.message;
+      } else if (error && typeof error === 'object' && 'message' in error) {
+        errorMsg = String((error as { message: unknown }).message);
+      }
+      
+      // Check if device is orphaned
+      if (errorMsg.includes('Device Orphaned') || errorMsg.includes('orphaned')) {
+        errorHandler.handleApplicationError('barcode', errorMsg, 'high');
+        // Try to automatically recover by clearing orphaned state and triggering re-registration
+        try {
+          const config = await invoke<{ first_run: boolean }>('get_full_config');
+          if (!config.first_run) {
+            console.log('Device orphaned during entry - clearing state and triggering re-registration');
+            await invoke('clear_orphaned_state_command');
+            await invoke('first_run_trigger');
+            return; // Exit - first-run screen will handle re-registration
+          }
+        } catch (recoveryError) {
+          console.error('Failed to recover from orphaned state:', recoveryError);
+        }
+      }
+      
+      errorHandler.handleApplicationError('barcode', errorMsg, 'high');
       showEntryError();
     }
     // Don't call resetEntryData here - let showEntrySuccess/showEntryError handle the reset
