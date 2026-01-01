@@ -136,9 +136,10 @@ async fn submit_barcode_entry(
     onecard: String,
 ) -> Result<(), String> {
     // Debounce: check if this is the same ID as the most recently scanned within the last 15 seconds
+    // Update timestamp immediately after check to prevent race conditions from rapid scans
     const DEBOUNCE_WINDOW_SECS: u64 = 15;
     {
-        let last_id = last_scanned_id.0.lock().unwrap();
+        let mut last_id = last_scanned_id.0.lock().unwrap();
         if let Some((ref last_onecard, ref last_timestamp)) = *last_id {
             if last_onecard == &onecard {
                 let elapsed = last_timestamp.elapsed();
@@ -159,19 +160,29 @@ async fn submit_barcode_entry(
                 // If more than 15 seconds have passed, allow the scan to proceed
             }
         }
+        // Update timestamp immediately to prevent race conditions from rapid duplicate scans
+        // This blocks subsequent scans even if the HTTP request is still in progress
+        *last_id = Some((onecard.clone(), std::time::Instant::now()));
     }
 
     // Submit the entry to the API
     let name = "Barcode".to_string();
-    submit_entry(config_manager, CardData { name, onecard: onecard.clone() })
+    let submit_result = submit_entry(config_manager, CardData { name, onecard: onecard.clone() })
         .await
-        .map_err(|e| format!("Failed to submit barcode entry: {}", e))?;
+        .map_err(|e| format!("Failed to submit barcode entry: {}", e));
 
-    // Only update last scanned ID/timestamp after successful HTTP submission
-    {
+    // If submission failed, clear the timestamp to allow retry
+    if submit_result.is_err() {
         let mut last_id = last_scanned_id.0.lock().unwrap();
-        *last_id = Some((onecard, std::time::Instant::now()));
+        // Only clear if it's the same onecard (don't clear if a different barcode was scanned)
+        if let Some((ref stored_onecard, _)) = *last_id {
+            if stored_onecard == &onecard {
+                *last_id = None;
+            }
+        }
     }
+
+    submit_result?;
 
     Ok(())
 }
