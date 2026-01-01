@@ -163,7 +163,7 @@ async fn submit_barcode_entry(
 
     // Submit the entry to the API
     let name = "Barcode".to_string();
-    submit_entry(config_manager, CardData { name, onecard.clone() })
+    submit_entry(config_manager, CardData { name, onecard: onecard.clone() })
         .await
         .map_err(|e| format!("Failed to submit barcode entry: {}", e))?;
 

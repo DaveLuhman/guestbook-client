@@ -68,12 +68,18 @@ export async function startHIDManager() {
   } catch (error) {
     const errorMsg = String(error);
     console.error('Failed to initialize camera scanner:', error);
-    
+
     // Check if error indicates no camera is available
     if (errorMsg.includes('No camera detected')) {
-      console.warn('No camera detected on system. Running without camera sidecar.');
+      console.warn(
+        'No camera detected on system. Running without camera sidecar.'
+      );
       cameraNotAvailable = true;
-      updateDeviceStatusIndicator('camera', 'disconnected', 'No camera detected');
+      updateDeviceStatusIndicator(
+        'camera',
+        'disconnected',
+        'No camera detected'
+      );
     } else {
       updateDeviceStatusIndicator('camera', 'error', errorMsg);
     }
@@ -129,9 +135,12 @@ export async function startHIDManager() {
       } else if (error && typeof error === 'object' && 'message' in error) {
         errorMsg = String((error as { message: unknown }).message);
       }
-      
+
       // Check if this is a debounce error (barcode submitted too recently)
-      if (errorMsg.includes('already submitted recently') || errorMsg.includes('Please wait')) {
+      if (
+        errorMsg.includes('already submitted recently') ||
+        errorMsg.includes('Please wait')
+      ) {
         console.log('Barcode debounced:', errorMsg);
         // Show brief informational message without error sound or red background
         const entryData = document.getElementById('entry-data');
@@ -142,28 +151,38 @@ export async function startHIDManager() {
         resetEntryData();
         return; // Exit early - don't treat as error
       }
-      
+
       // Error - non-2xx HTTP response or network error
       console.error('Submit error:', error);
       soundManager.playError();
-      
+
       // Check if device is orphaned
-      if (errorMsg.includes('Device Orphaned') || errorMsg.includes('orphaned')) {
+      if (
+        errorMsg.includes('Device Orphaned') ||
+        errorMsg.includes('orphaned')
+      ) {
         errorHandler.handleApplicationError('barcode', errorMsg, 'high');
         // Try to automatically recover by clearing orphaned state and triggering re-registration
         try {
-          const config = await invoke<{ first_run: boolean }>('get_full_config');
+          const config = await invoke<{ first_run: boolean }>(
+            'get_full_config'
+          );
           if (!config.first_run) {
-            console.log('Device orphaned during entry - clearing state and triggering re-registration');
+            console.log(
+              'Device orphaned during entry - clearing state and triggering re-registration'
+            );
             await invoke('clear_orphaned_state_command');
             await invoke('first_run_trigger');
             return; // Exit - first-run screen will handle re-registration
           }
         } catch (recoveryError) {
-          console.error('Failed to recover from orphaned state:', recoveryError);
+          console.error(
+            'Failed to recover from orphaned state:',
+            recoveryError
+          );
         }
       }
-      
+
       errorHandler.handleApplicationError('barcode', errorMsg, 'high');
       showEntryError();
     }
@@ -238,24 +257,34 @@ export async function startHIDManager() {
       } else if (error && typeof error === 'object' && 'message' in error) {
         errorMsg = String((error as { message: unknown }).message);
       }
-      
+
       // Check if device is orphaned
-      if (errorMsg.includes('Device Orphaned') || errorMsg.includes('orphaned')) {
+      if (
+        errorMsg.includes('Device Orphaned') ||
+        errorMsg.includes('orphaned')
+      ) {
         errorHandler.handleApplicationError('magtek', errorMsg, 'high');
         // Try to automatically recover by clearing orphaned state and triggering re-registration
         try {
-          const config = await invoke<{ first_run: boolean }>('get_full_config');
+          const config = await invoke<{ first_run: boolean }>(
+            'get_full_config'
+          );
           if (!config.first_run) {
-            console.log('Device orphaned during entry - clearing state and triggering re-registration');
+            console.log(
+              'Device orphaned during entry - clearing state and triggering re-registration'
+            );
             await invoke('clear_orphaned_state_command');
             await invoke('first_run_trigger');
             return; // Exit - first-run screen will handle re-registration
           }
         } catch (recoveryError) {
-          console.error('Failed to recover from orphaned state:', recoveryError);
+          console.error(
+            'Failed to recover from orphaned state:',
+            recoveryError
+          );
         }
       }
-      
+
       errorHandler.handleApplicationError('magtek', errorMsg, 'high');
       showEntryError();
     }
@@ -344,7 +373,10 @@ async function checkCameraHealth() {
     try {
       processStatus = await invoke<ProcessStatus>('get_camera_sidecar_status');
     } catch (err) {
-      console.error('[CameraMonitor] Failed to get sidecar process status:', err);
+      console.error(
+        '[CameraMonitor] Failed to get sidecar process status:',
+        err
+      );
     }
 
     // If process has exited, try to restart it
@@ -352,7 +384,11 @@ async function checkCameraHealth() {
       console.warn(
         `[CameraMonitor] Sidecar process has exited (code: ${processStatus.exit_code}), attempting restart...`
       );
-      updateDeviceStatusIndicator('camera', 'connecting', 'Restarting camera service...');
+      updateDeviceStatusIndicator(
+        'camera',
+        'connecting',
+        'Restarting camera service...'
+      );
 
       try {
         await invoke('start_camera_sidecar');
@@ -361,16 +397,26 @@ async function checkCameraHealth() {
       } catch (restartErr) {
         const errorMsg = String(restartErr);
         console.error('[CameraMonitor] Failed to restart sidecar:', restartErr);
-        
+
         // Check if error indicates no camera is available
         if (errorMsg.includes('No camera detected')) {
-          console.warn('[CameraMonitor] No camera detected on system. Stopping camera monitoring.');
+          console.warn(
+            '[CameraMonitor] No camera detected on system. Stopping camera monitoring.'
+          );
           cameraNotAvailable = true;
-          updateDeviceStatusIndicator('camera', 'disconnected', 'No camera detected');
+          updateDeviceStatusIndicator(
+            'camera',
+            'disconnected',
+            'No camera detected'
+          );
           return;
         }
-        
-        updateDeviceStatusIndicator('camera', 'error', `Restart failed: ${restartErr}`);
+
+        updateDeviceStatusIndicator(
+          'camera',
+          'error',
+          `Restart failed: ${restartErr}`
+        );
         return;
       }
     }
@@ -385,18 +431,29 @@ async function checkCameraHealth() {
 
       // If health check fails and process status shows it's not running, try restart
       if (processStatus && !processStatus.running) {
-        console.warn('[CameraMonitor] Sidecar not running, attempting restart...');
+        console.warn(
+          '[CameraMonitor] Sidecar not running, attempting restart...'
+        );
         try {
           await invoke('start_camera_sidecar');
         } catch (restartErr) {
           const errorMsg = String(restartErr);
-          console.error('[CameraMonitor] Failed to restart sidecar:', restartErr);
-          
+          console.error(
+            '[CameraMonitor] Failed to restart sidecar:',
+            restartErr
+          );
+
           // Check if error indicates no camera is available
           if (errorMsg.includes('No camera detected')) {
-            console.warn('[CameraMonitor] No camera detected on system. Stopping camera monitoring.');
+            console.warn(
+              '[CameraMonitor] No camera detected on system. Stopping camera monitoring.'
+            );
             cameraNotAvailable = true;
-            updateDeviceStatusIndicator('camera', 'disconnected', 'No camera detected');
+            updateDeviceStatusIndicator(
+              'camera',
+              'disconnected',
+              'No camera detected'
+            );
             return;
           }
         }
