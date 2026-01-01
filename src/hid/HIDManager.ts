@@ -120,9 +120,6 @@ export async function startHIDManager() {
       soundManager.playSuccess();
       showEntrySuccess();
     } catch (error) {
-      // Error - non-2xx HTTP response or network error
-      console.error('Submit error:', error);
-      soundManager.playError();
       // Extract error message - Tauri errors can be strings, Error objects, or custom objects
       let errorMsg = 'Unknown barcode error';
       if (typeof error === 'string') {
@@ -132,6 +129,23 @@ export async function startHIDManager() {
       } else if (error && typeof error === 'object' && 'message' in error) {
         errorMsg = String((error as { message: unknown }).message);
       }
+      
+      // Check if this is a debounce error (barcode submitted too recently)
+      if (errorMsg.includes('already submitted recently') || errorMsg.includes('Please wait')) {
+        console.log('Barcode debounced:', errorMsg);
+        // Show brief informational message without error sound or red background
+        const entryData = document.getElementById('entry-data');
+        if (entryData) {
+          entryData.innerHTML = `<p>${errorMsg}</p>`;
+        }
+        // Reset after 3 seconds
+        resetEntryData();
+        return; // Exit early - don't treat as error
+      }
+      
+      // Error - non-2xx HTTP response or network error
+      console.error('Submit error:', error);
+      soundManager.playError();
       
       // Check if device is orphaned
       if (errorMsg.includes('Device Orphaned') || errorMsg.includes('orphaned')) {
