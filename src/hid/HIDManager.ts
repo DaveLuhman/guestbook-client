@@ -68,12 +68,18 @@ export async function startHIDManager() {
   } catch (error) {
     const errorMsg = String(error);
     console.error('Failed to initialize camera scanner:', error);
-    
+
     // Check if error indicates no camera is available
     if (errorMsg.includes('No camera detected')) {
-      console.warn('No camera detected on system. Running without camera sidecar.');
+      console.warn(
+        'No camera detected on system. Running without camera sidecar.'
+      );
       cameraNotAvailable = true;
-      updateDeviceStatusIndicator('camera', 'disconnected', 'No camera detected');
+      updateDeviceStatusIndicator(
+        'camera',
+        'disconnected',
+        'No camera detected'
+      );
     } else {
       updateDeviceStatusIndicator('camera', 'error', errorMsg);
     }
@@ -81,11 +87,15 @@ export async function startHIDManager() {
   }
 
   // Listen for camera barcode events (custom window events)
-  window.addEventListener('camera-barcode-data', ((event: CustomEvent) => {
-    const onecard = event.detail?.payload;
+  window.addEventListener('camera-barcode-data', ((event: Event) => {
+    const customEvent = event as CustomEvent;
+    const onecard = customEvent.detail?.payload;
     if (onecard && typeof onecard === 'string') {
       // Process the same way as Tauri barcode-data events
-      processBarcodeData(onecard);
+      // Fire and forget - promise is properly tracked within processBarcodeData
+      processBarcodeData(onecard).catch((error) => {
+        console.error('Error processing camera barcode data:', error);
+      });
     }
   }) as EventListener);
 
@@ -107,54 +117,73 @@ export async function startHIDManager() {
         return;
       }
       updateScanData(onecard); // Show scanned value to user
-      // Submit immediately without blocking - handle response asynchronously
-      // This improves responsiveness by not waiting for HTTP response before showing feedback
-      invoke('submit_barcode_entry', { onecard })
-        .then(() => {
-          // Success - HTTP request completed with 2xx status
-          soundManager.playSuccess();
-          showEntrySuccess();
-        })
-        .catch(async (error) => {
-          // Error - non-2xx HTTP response or network error
-          console.error('Submit error:', error);
-          soundManager.playError();
-          // Extract error message - Tauri errors can be strings, Error objects, or custom objects
-          let errorMsg = 'Unknown barcode error';
-          if (typeof error === 'string') {
-            errorMsg = error;
-          } else if (error instanceof Error) {
-            errorMsg = error.message;
-          } else if (error && typeof error === 'object' && 'message' in error) {
-            errorMsg = String((error as { message: unknown }).message);
-          }
-          
-          // Check if device is orphaned
-          if (errorMsg.includes('Device Orphaned') || errorMsg.includes('orphaned')) {
-            errorHandler.handleApplicationError('barcode', errorMsg, 'high');
-            // Try to automatically recover by clearing orphaned state and triggering re-registration
-            try {
-              const config = await invoke<{ first_run: boolean }>('get_full_config');
-              if (!config.first_run) {
-                console.log('Device orphaned during entry - clearing state and triggering re-registration');
-                await invoke('clear_orphaned_state_command');
-                await invoke('first_run_trigger');
-                return; // Exit - first-run screen will handle re-registration
-              }
-            } catch (recoveryError) {
-              console.error('Failed to recover from orphaned state:', recoveryError);
-            }
-          }
-          
-          errorHandler.handleApplicationError('barcode', errorMsg, 'high');
-          showEntryError();
-        });
-      // Don't await - return immediately to allow UI to be responsive
+      // Submit the barcode data to the backend and await the result
+      // Note: Rust checks HTTP status code and returns Result<(), String>
+      // - If 2xx: Rust returns Ok(()), invoke resolves, we play success sound
+      // - If non-2xx or network error: Rust returns Err(String), invoke throws, catch block handles it
+      await invoke('submit_barcode_entry', { onecard });
+      // Only play success sound after receiving 2xx HTTP response (invoke resolved successfully)
+      soundManager.playSuccess();
+      showEntrySuccess();
     } catch (error) {
-      // This catch block handles synchronous errors (validation, etc.)
-      console.error('Process barcode error:', error);
+      // Extract error message - Tauri errors can be strings, Error objects, or custom objects
+      let errorMsg = 'Unknown barcode error';
+      if (typeof error === 'string') {
+        errorMsg = error;
+      } else if (error instanceof Error) {
+        errorMsg = error.message;
+      } else if (error && typeof error === 'object' && 'message' in error) {
+        errorMsg = String((error as { message: unknown }).message);
+      }
+
+      // Check if this is a debounce error (barcode submitted too recently)
+      if (
+        errorMsg.includes('already submitted recently') ||
+        errorMsg.includes('Please wait')
+      ) {
+        console.log('Barcode debounced:', errorMsg);
+        // Show brief informational message without error sound or red background
+        const entryData = document.getElementById('entry-data');
+        if (entryData) {
+          entryData.innerHTML = `<p>${errorMsg}</p>`;
+        }
+        // Reset after 3 seconds
+        resetEntryData();
+        return; // Exit early - don't treat as error
+      }
+
+      // Error - non-2xx HTTP response or network error
+      console.error('Submit error:', error);
       soundManager.playError();
-      errorHandler.handleApplicationError('barcode', 'Failed to process barcode', 'high');
+
+      // Check if device is orphaned
+      if (
+        errorMsg.includes('Device Orphaned') ||
+        errorMsg.includes('orphaned')
+      ) {
+        errorHandler.handleApplicationError('barcode', errorMsg, 'high');
+        // Try to automatically recover by clearing orphaned state and triggering re-registration
+        try {
+          const config = await invoke<{ first_run: boolean }>(
+            'get_full_config'
+          );
+          if (!config.first_run) {
+            console.log(
+              'Device orphaned during entry - clearing state and triggering re-registration'
+            );
+            await invoke('clear_orphaned_state_command');
+            await invoke('first_run_trigger');
+            return; // Exit - first-run screen will handle re-registration
+          }
+        } catch (recoveryError) {
+          console.error(
+            'Failed to recover from orphaned state:',
+            recoveryError
+          );
+        }
+      }
+
+      errorHandler.handleApplicationError('barcode', errorMsg, 'high');
       showEntryError();
     }
     // Don't call resetEntryData here - let showEntrySuccess/showEntryError handle the reset
@@ -228,24 +257,34 @@ export async function startHIDManager() {
       } else if (error && typeof error === 'object' && 'message' in error) {
         errorMsg = String((error as { message: unknown }).message);
       }
-      
+
       // Check if device is orphaned
-      if (errorMsg.includes('Device Orphaned') || errorMsg.includes('orphaned')) {
+      if (
+        errorMsg.includes('Device Orphaned') ||
+        errorMsg.includes('orphaned')
+      ) {
         errorHandler.handleApplicationError('magtek', errorMsg, 'high');
         // Try to automatically recover by clearing orphaned state and triggering re-registration
         try {
-          const config = await invoke<{ first_run: boolean }>('get_full_config');
+          const config = await invoke<{ first_run: boolean }>(
+            'get_full_config'
+          );
           if (!config.first_run) {
-            console.log('Device orphaned during entry - clearing state and triggering re-registration');
+            console.log(
+              'Device orphaned during entry - clearing state and triggering re-registration'
+            );
             await invoke('clear_orphaned_state_command');
             await invoke('first_run_trigger');
             return; // Exit - first-run screen will handle re-registration
           }
         } catch (recoveryError) {
-          console.error('Failed to recover from orphaned state:', recoveryError);
+          console.error(
+            'Failed to recover from orphaned state:',
+            recoveryError
+          );
         }
       }
-      
+
       errorHandler.handleApplicationError('magtek', errorMsg, 'high');
       showEntryError();
     }
@@ -334,7 +373,10 @@ async function checkCameraHealth() {
     try {
       processStatus = await invoke<ProcessStatus>('get_camera_sidecar_status');
     } catch (err) {
-      console.error('[CameraMonitor] Failed to get sidecar process status:', err);
+      console.error(
+        '[CameraMonitor] Failed to get sidecar process status:',
+        err
+      );
     }
 
     // If process has exited, try to restart it
@@ -342,7 +384,11 @@ async function checkCameraHealth() {
       console.warn(
         `[CameraMonitor] Sidecar process has exited (code: ${processStatus.exit_code}), attempting restart...`
       );
-      updateDeviceStatusIndicator('camera', 'connecting', 'Restarting camera service...');
+      updateDeviceStatusIndicator(
+        'camera',
+        'connecting',
+        'Restarting camera service...'
+      );
 
       try {
         await invoke('start_camera_sidecar');
@@ -351,16 +397,26 @@ async function checkCameraHealth() {
       } catch (restartErr) {
         const errorMsg = String(restartErr);
         console.error('[CameraMonitor] Failed to restart sidecar:', restartErr);
-        
+
         // Check if error indicates no camera is available
         if (errorMsg.includes('No camera detected')) {
-          console.warn('[CameraMonitor] No camera detected on system. Stopping camera monitoring.');
+          console.warn(
+            '[CameraMonitor] No camera detected on system. Stopping camera monitoring.'
+          );
           cameraNotAvailable = true;
-          updateDeviceStatusIndicator('camera', 'disconnected', 'No camera detected');
+          updateDeviceStatusIndicator(
+            'camera',
+            'disconnected',
+            'No camera detected'
+          );
           return;
         }
-        
-        updateDeviceStatusIndicator('camera', 'error', `Restart failed: ${restartErr}`);
+
+        updateDeviceStatusIndicator(
+          'camera',
+          'error',
+          `Restart failed: ${restartErr}`
+        );
         return;
       }
     }
@@ -375,18 +431,29 @@ async function checkCameraHealth() {
 
       // If health check fails and process status shows it's not running, try restart
       if (processStatus && !processStatus.running) {
-        console.warn('[CameraMonitor] Sidecar not running, attempting restart...');
+        console.warn(
+          '[CameraMonitor] Sidecar not running, attempting restart...'
+        );
         try {
           await invoke('start_camera_sidecar');
         } catch (restartErr) {
           const errorMsg = String(restartErr);
-          console.error('[CameraMonitor] Failed to restart sidecar:', restartErr);
-          
+          console.error(
+            '[CameraMonitor] Failed to restart sidecar:',
+            restartErr
+          );
+
           // Check if error indicates no camera is available
           if (errorMsg.includes('No camera detected')) {
-            console.warn('[CameraMonitor] No camera detected on system. Stopping camera monitoring.');
+            console.warn(
+              '[CameraMonitor] No camera detected on system. Stopping camera monitoring.'
+            );
             cameraNotAvailable = true;
-            updateDeviceStatusIndicator('camera', 'disconnected', 'No camera detected');
+            updateDeviceStatusIndicator(
+              'camera',
+              'disconnected',
+              'No camera detected'
+            );
             return;
           }
         }

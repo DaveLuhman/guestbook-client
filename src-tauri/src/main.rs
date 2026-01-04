@@ -135,27 +135,55 @@ async fn submit_barcode_entry(
     last_scanned_id: tauri::State<'_, LastScannedId>,
     onecard: String,
 ) -> Result<(), String> {
-    // Debounce: ignore if this is the same ID as the most recently scanned
+    // Debounce: check if this is the same ID as the most recently scanned within the last 15 seconds
+    // Update timestamp immediately after check to prevent race conditions from rapid scans
+    const DEBOUNCE_WINDOW_SECS: u64 = 15;
     {
-        let last_id = last_scanned_id.0.lock().unwrap();
-        if let Some(ref last) = *last_id {
-            if last == &onecard {
-                log::debug!("Ignoring duplicate scan (debounce): {}", onecard);
-                return Ok(()); // Return success silently for duplicates
+        let mut last_id = last_scanned_id.0.lock().unwrap();
+        if let Some((ref last_onecard, ref last_timestamp)) = *last_id {
+            if last_onecard == &onecard {
+                let elapsed = last_timestamp.elapsed();
+                if elapsed.as_secs() < DEBOUNCE_WINDOW_SECS {
+                    let remaining = DEBOUNCE_WINDOW_SECS - elapsed.as_secs();
+                    log::debug!(
+                        "Ignoring duplicate scan (debounce): {} (scanned {}s ago, {}s remaining)",
+                        onecard,
+                        elapsed.as_secs(),
+                        remaining
+                    );
+                    return Err(format!(
+                        "Barcode already submitted recently. Please wait {} second{} before scanning again.",
+                        remaining,
+                        if remaining == 1 { "" } else { "s" }
+                    ));
+                }
+                // If more than 15 seconds have passed, allow the scan to proceed
+            }
+        }
+        // Update timestamp immediately to prevent race conditions from rapid duplicate scans
+        // This blocks subsequent scans even if the HTTP request is still in progress
+        *last_id = Some((onecard.clone(), std::time::Instant::now()));
+    }
+
+    // Submit the entry to the API
+    let name = "Barcode".to_string();
+    let submit_result = submit_entry(config_manager, CardData { name, onecard: onecard.clone() })
+        .await
+        .map_err(|e| format!("Failed to submit barcode entry: {}", e));
+
+    // If submission failed, clear the timestamp to allow retry
+    if submit_result.is_err() {
+        let mut last_id = last_scanned_id.0.lock().unwrap();
+        // Only clear if it's the same onecard (don't clear if a different barcode was scanned)
+        if let Some((ref stored_onecard, _)) = *last_id {
+            if stored_onecard == &onecard {
+                *last_id = None;
             }
         }
     }
 
-    // Update last scanned ID
-    {
-        let mut last_id = last_scanned_id.0.lock().unwrap();
-        *last_id = Some(onecard.clone());
-    }
+    submit_result?;
 
-    let name = "Barcode".to_string();
-    submit_entry(config_manager, CardData { name, onecard })
-        .await
-        .map_err(|e| format!("Failed to submit barcode entry: {}", e))?;
     Ok(())
 }
 
@@ -516,8 +544,9 @@ fn get_app_version() -> String {
 struct ScannerProc(Mutex<Option<Child>>);
 // Last error from scanner process
 struct ScannerError(Arc<Mutex<Option<String>>>);
-// Last scanned barcode ID for debouncing (ignore duplicates)
-struct LastScannedId(Arc<Mutex<Option<String>>>);
+// Last scanned barcode ID for debouncing (ignore duplicates within time window)
+// Stores (onecard_id, timestamp) to allow time-based debouncing
+struct LastScannedId(Arc<Mutex<Option<(String, std::time::Instant)>>>);
 
 #[tauri::command]
 async fn get_camera_sidecar_status(
