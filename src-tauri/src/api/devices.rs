@@ -174,7 +174,7 @@ pub async fn check_network_availability(
     let heartbeat_url = format!("{}/devices/heartbeat/{}", server_url, device_id);
 
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(15))
         .build()
         .map_err(|e| format!("Failed to create HTTP client for network check: {}", e))?;
 
