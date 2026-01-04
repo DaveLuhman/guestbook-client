@@ -3,6 +3,7 @@ use chrono::Utc;
 use serde_json::json;
 use std::time::Duration;
 use tauri_plugin_http::reqwest; // Add this import for the `json!` macro
+use tokio::time;
 
 pub async fn register_device(
     config_manager: tauri::State<'_, ConfigManager>,
@@ -149,10 +150,11 @@ pub fn clear_orphaned_state(config_manager: tauri::State<'_, ConfigManager>) -> 
     Ok(())
 }
 
-/// Lightweight network availability check using the heartbeat endpoint with a short timeout.
+/// Lightweight network availability check using the heartbeat endpoint with retry logic.
+/// Implements exponential backoff retry (3 attempts: immediate, 1s, 2s delays).
 /// Returns:
 /// - Ok(true) - Network available, device valid
-/// - Ok(false) - Network unavailable or other non-403 errors
+/// - Ok(false) - Network unavailable after all retries or other non-403 errors
 /// - Err("ORPHANED") - Device is orphaned (403 response indicates device not found on server)
 pub async fn check_network_availability(
     config_manager: tauri::State<'_, ConfigManager>,
@@ -173,58 +175,118 @@ pub async fn check_network_availability(
 
     let heartbeat_url = format!("{}/devices/heartbeat/{}", server_url, device_id);
 
+    // Create client with longer timeouts: 10s connection, 20s read
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(15))
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(20))
         .build()
         .map_err(|e| format!("Failed to create HTTP client for network check: {}", e))?;
 
-    log::debug!("Performing network availability check to {}", heartbeat_url);
+    log::debug!("Performing network availability check to {} (with retries)", heartbeat_url);
 
-    let response = client
-        .get(heartbeat_url)
-        .header("Content-Type", "application/json")
-        .header("Authorization", format!("Bearer {}", server_token))
-        .send()
-        .await;
+    // Retry logic: 3 attempts with exponential backoff (0s, 1s, 2s)
+    let retry_delays = vec![Duration::from_secs(0), Duration::from_secs(1), Duration::from_secs(2)];
+    let mut last_error: Option<reqwest::Error> = None;
+    let mut last_status: Option<u16> = None;
 
-    match response {
-        Ok(resp) => {
-            let status = resp.status();
-            if status.is_success() {
-                Ok(true)
-            } else if status.as_u16() == 403 {
-                // Device is orphaned - deleted from server but still has local config
-                let body = resp
-                    .text()
-                    .await
-                    .unwrap_or_else(|_| "<no body>".to_string());
+    for (attempt, delay) in retry_delays.iter().enumerate() {
+        // Wait before retry (skip delay on first attempt)
+        if attempt > 0 {
+            log::debug!("Network check retry attempt {} after {}ms delay", attempt + 1, delay.as_millis());
+            time::sleep(*delay).await;
+        }
+
+        let response = client
+            .get(&heartbeat_url)
+            .header("Content-Type", "application/json")
+            .header("Authorization", format!("Bearer {}", server_token))
+            .send()
+            .await;
+
+        match response {
+            Ok(resp) => {
+                let status = resp.status();
+                last_status = Some(status.as_u16());
+
+                if status.is_success() {
+                    if attempt > 0 {
+                        log::info!("Network check succeeded on retry attempt {}", attempt + 1);
+                    } else {
+                        log::debug!("Network check succeeded on first attempt");
+                    }
+                    return Ok(true);
+                } else if status.as_u16() == 403 {
+                    // Device is orphaned - don't retry, return immediately
+                    let body = resp
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "<no body>".to_string());
+                    log::warn!(
+                        "Device appears to be orphaned (403): {}",
+                        body
+                    );
+                    return Err("ORPHANED".to_string());
+                } else {
+                    // Non-success, non-403 status - log but continue to retry
+                    let body = resp
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "<no body>".to_string());
+                    log::warn!(
+                        "Network availability check returned status {} on attempt {}: {}",
+                        status,
+                        attempt + 1,
+                        body
+                    );
+                    // Continue to next retry
+                }
+            }
+            Err(e) => {
+                last_error = Some(e);
+                let error_type = if last_error.as_ref().unwrap().is_timeout() {
+                    "timeout"
+                } else if last_error.as_ref().unwrap().is_connect() {
+                    "connection"
+                } else {
+                    "other"
+                };
                 log::warn!(
-                    "Device appears to be orphaned (403): {}",
-                    body
+                    "Network availability check {} error on attempt {}: {}",
+                    error_type,
+                    attempt + 1,
+                    last_error.as_ref().unwrap()
                 );
-                Err("ORPHANED".to_string())
-            } else {
-                let body = resp
-                    .text()
-                    .await
-                    .unwrap_or_else(|_| "<no body>".to_string());
-                log::warn!(
-                    "Network availability check failed: status {}: {}",
-                    status,
-                    body
-                );
-                Ok(false)
+                // Continue to next retry
             }
         }
-        Err(e) => {
-            if e.is_timeout() {
-                log::warn!("Network availability check timed out: {}", e);
-            } else if e.is_connect() {
-                log::warn!("Network availability check connection error: {}", e);
-            } else {
-                log::warn!("Network availability check error: {}", e);
-            }
-            Ok(false)
-        }
+    }
+
+    // All retries exhausted - determine final result
+    if let Some(status) = last_status {
+        // We got a response but it wasn't successful
+        log::warn!(
+            "Network availability check failed after all retries: final status {}",
+            status
+        );
+        Ok(false)
+    } else if let Some(ref err) = last_error {
+        // All attempts failed with network errors
+        let error_type = if err.is_timeout() {
+            "timeout"
+        } else if err.is_connect() {
+            "connection"
+        } else {
+            "network"
+        };
+        log::warn!(
+            "Network availability check failed after all retries: {} error: {}",
+            error_type,
+            err
+        );
+        Ok(false)
+    } else {
+        // Should not happen, but handle gracefully
+        log::error!("Network availability check failed with unknown error");
+        Ok(false)
     }
 }

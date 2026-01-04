@@ -244,7 +244,7 @@ function initializeManualEntry() {
           error instanceof Error
             ? error.message
             : 'Manual entry submission failed';
-        
+
         // Check if device is orphaned
         if (errorMsg.includes('Device Orphaned') || errorMsg.includes('orphaned')) {
           errorHandler.handleApplicationError('keypad', errorMsg, 'high');
@@ -261,7 +261,7 @@ function initializeManualEntry() {
             console.error('Failed to recover from orphaned state:', recoveryError);
           }
         }
-        
+
         errorHandler.handleApplicationError('keypad', errorMsg, 'high');
         showEntryError();
       }
@@ -557,7 +557,7 @@ async function handleDeviceReset() {
   } catch (error) {
     console.error('Device reset failed:', error);
     const errorMsg = error instanceof Error ? error.message : 'Device reset failed';
-    
+
     // Note: Reset should succeed even for orphaned devices (backend handles 403 gracefully)
     // But if there's an error, log it but still show success since local config is cleared
     if (errorMsg.includes('403') || errorMsg.includes('orphaned')) {
@@ -570,7 +570,7 @@ async function handleDeviceReset() {
       }, 2000);
       return;
     }
-    
+
     errorHandler.handleApplicationError('system', errorMsg, 'medium');
 
     // Reset button state on error
@@ -690,7 +690,7 @@ function resetEntryDisplay() {
     // Only reset to default if network is available
     // If network is unavailable, keep the warning message
     const isNetworkUnavailable = document.body.classList.contains('network-unavailable-state');
-    
+
     if (!isNetworkUnavailable) {
       entryData.innerHTML =
         '<p>Swipe your card or scan your barcode to record an entry...</p>';
@@ -763,6 +763,9 @@ async function startNetworkMonitoring() {
   let lastKnownAvailable: boolean | null = null;
   let isOrphaned = false;
   let lastKnownOrphaned = false;
+  // Track consecutive failures - require 2 failures before marking network as down
+  let consecutiveFailures = 0;
+  const FAILURE_THRESHOLD = 2; // Require 2 consecutive failures before showing warning
 
   const updateNetworkUI = (isAvailable: boolean, orphaned: boolean = false) => {
     const entryData = document.getElementById('entry-data');
@@ -804,31 +807,58 @@ async function startNetworkMonitoring() {
         'check_network_availability_command'
       );
 
-      // Device is valid and network is available
-      if (isOrphaned) {
-        // Device was orphaned but now appears valid - clear orphaned state
-        console.log('Device status changed from orphaned to valid');
-        isOrphaned = false;
-        // Force UI update to clear orphaned warning
-        lastKnownOrphaned = true;
-        lastKnownAvailable = null; // Reset to force UI refresh
-      }
+      // Success - reset failure counter and update UI immediately
+      if (isAvailable) {
+        const hadFailures = consecutiveFailures > 0;
+        consecutiveFailures = 0; // Reset on success
 
-      // Update UI if availability or orphaned state changed
-      if (isAvailable !== lastKnownAvailable || isOrphaned !== lastKnownOrphaned) {
-        updateNetworkUI(isAvailable, false);
-        lastKnownAvailable = isAvailable;
-        lastKnownOrphaned = false;
+        // Device is valid and network is available
+        if (isOrphaned) {
+          // Device was orphaned but now appears valid - clear orphaned state
+          console.log('Device status changed from orphaned to valid');
+          isOrphaned = false;
+          // Force UI update to clear orphaned warning
+          lastKnownOrphaned = true;
+          lastKnownAvailable = null; // Reset to force UI refresh
+        }
+
+        // Update UI immediately on success (especially if we had failures before)
+        if (isAvailable !== lastKnownAvailable || isOrphaned !== lastKnownOrphaned || hadFailures) {
+          updateNetworkUI(isAvailable, false);
+          lastKnownAvailable = isAvailable;
+          lastKnownOrphaned = false;
+          if (hadFailures) {
+            console.log('Network recovered - clearing warning after successful check');
+          }
+        }
+      } else {
+        // Check returned false - increment failure counter
+        consecutiveFailures++;
+        console.warn(`Network check failed (${consecutiveFailures}/${FAILURE_THRESHOLD} consecutive failures)`);
+
+        // Only mark as unavailable if we've exceeded the threshold
+        if (consecutiveFailures >= FAILURE_THRESHOLD) {
+          if (lastKnownAvailable !== false || isOrphaned !== lastKnownOrphaned) {
+            updateNetworkUI(false, false);
+            lastKnownAvailable = false;
+            lastKnownOrphaned = false;
+          }
+        } else {
+          // Not enough failures yet - don't update UI, just log
+          console.log(`Network check failed but below threshold (${consecutiveFailures}/${FAILURE_THRESHOLD}) - not showing warning`);
+        }
       }
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : String(e);
-      
+
       // Check if device is orphaned (403 response)
       if (errorMsg === 'ORPHANED') {
+        // Orphaned state - always show immediately (don't use failure threshold)
         console.warn('Device detected as orphaned during network check');
+        consecutiveFailures = 0; // Reset failure counter
         const wasOrphaned = isOrphaned;
         isOrphaned = true;
-        
+
         // Update UI if orphaned state changed
         if (!wasOrphaned || lastKnownOrphaned !== isOrphaned) {
           updateNetworkUI(false, true);
@@ -836,7 +866,7 @@ async function startNetworkMonitoring() {
           // Reset lastKnownAvailable to force UI refresh when orphaned state clears
           lastKnownAvailable = null;
         }
-        
+
         // Check if we should automatically trigger re-registration
         try {
           const config: config = await invoke('get_full_config');
@@ -851,24 +881,33 @@ async function startNetworkMonitoring() {
         } catch (configError) {
           console.error('Failed to check config for orphaned recovery:', configError);
         }
-        
+
         errorHandler.handleApplicationError('network', 'Device Orphaned - This device has been removed from the server', 'high');
       } else {
-        // Other network errors - clear orphaned state if it was set
+        // Other network errors - increment failure counter
+        consecutiveFailures++;
+        console.warn(`Network availability check error (${consecutiveFailures}/${FAILURE_THRESHOLD} consecutive failures):`, errorMsg);
+
+        // Clear orphaned state if it was set
         if (isOrphaned) {
           isOrphaned = false;
           lastKnownOrphaned = true; // Mark as changed to trigger UI update
           lastKnownAvailable = null; // Reset to force UI refresh
         }
-        
-        console.error('Network availability check failed', e);
-        errorHandler.handleApplicationError('network', errorMsg, 'medium');
 
-        // Update UI if state changed
-        if (lastKnownAvailable !== false || lastKnownOrphaned) {
-          updateNetworkUI(false, false);
-          lastKnownAvailable = false;
-          lastKnownOrphaned = false;
+        // Only show error and update UI if we've exceeded the threshold
+        if (consecutiveFailures >= FAILURE_THRESHOLD) {
+          errorHandler.handleApplicationError('network', errorMsg, 'medium');
+
+          // Update UI if state changed
+          if (lastKnownAvailable !== false || lastKnownOrphaned) {
+            updateNetworkUI(false, false);
+            lastKnownAvailable = false;
+            lastKnownOrphaned = false;
+          }
+        } else {
+          // Below threshold - log but don't show error or update UI
+          console.log(`Network check error below threshold (${consecutiveFailures}/${FAILURE_THRESHOLD}) - not showing warning`);
         }
       }
     }
@@ -947,7 +986,7 @@ function updateCameraVideoDisplay(enabled: boolean) {
 (async () => {
   const config: config = await invoke('get_full_config');
   console.log(config);
-  
+
   // Check for orphaned device state on boot if device is already configured
   if (!config.first_run) {
     try {
@@ -965,7 +1004,7 @@ function updateCameraVideoDisplay(enabled: boolean) {
       }
     }
   }
-  
+
   if (config.first_run) {
     await invoke('first_run_trigger');
   }
