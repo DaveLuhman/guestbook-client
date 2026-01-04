@@ -17,6 +17,7 @@ export type SidecarHealth = {
   error?: string;
 };
 
+
 const SIDECAR_BASE_URL = 'http://127.0.0.1:7313';
 
 /**
@@ -84,7 +85,7 @@ export function startScanStream(onScan: (scan: ScanEvent) => void): () => void {
         // Long-poll for next scan using since/seq and timeout parameters
         const url = `${SIDECAR_BASE_URL}/next_scan?since=${sinceSeq}&timeout=15`;
         console.log(`[CameraSidecar] Long-polling ${url}`);
-        
+
         const res = await fetch(url, {
           signal: abortController.signal,
         });
@@ -100,21 +101,62 @@ export function startScanStream(onScan: (scan: ScanEvent) => void): () => void {
           continue;
         }
 
-        const json = await res.json();
+        let json: unknown;
+        try {
+          json = await res.json();
+        } catch (parseError) {
+          console.error(`[CameraSidecar] Failed to parse JSON response:`, parseError);
+          await new Promise((r) => setTimeout(r, backoffMs));
+          backoffMs = Math.min(backoffMs * 2, maxBackoffMs);
+          continue;
+        }
+
         console.log(`[CameraSidecar] Received response from /next_scan:`, json);
 
-        // Update sequence number if provided
-        if (typeof json.seq === 'number') {
-          sinceSeq = json.seq;
+        // Validate response format
+        if (json === null || typeof json !== 'object') {
+          console.error(`[CameraSidecar] Invalid response format (not an object):`, json);
+          await new Promise((r) => setTimeout(r, backoffMs));
+          backoffMs = Math.min(backoffMs * 2, maxBackoffMs);
+          continue;
+        }
+
+        // Type guard for response
+        const response = json as Record<string, unknown>;
+
+        if (response.ok !== true) {
+          console.error(`[CameraSidecar] Response indicates error:`, response);
+          await new Promise((r) => setTimeout(r, backoffMs));
+          backoffMs = Math.min(backoffMs * 2, maxBackoffMs);
+          continue;
+        }
+
+        // Update sequence number if provided (always update to latest known seq)
+        if (typeof response.seq === 'number') {
+          const oldSeq = sinceSeq;
+          sinceSeq = response.seq;
+          if (oldSeq !== sinceSeq) {
+            console.log(`[CameraSidecar] Updated sequence: ${oldSeq} -> ${sinceSeq}`);
+          }
         }
 
         // Handle scan data
-        if (json.ok && json.scan !== null && json.scan !== undefined) {
+        const scanData = response.scan;
+        if (scanData !== null && scanData !== undefined && typeof scanData === 'object') {
+          const scanObj = scanData as Record<string, unknown>;
+          // Validate scan object has required fields
+          const code = scanObj.code;
+          if (!code || typeof code !== 'string') {
+            console.warn(`[CameraSidecar] Invalid scan object (missing or invalid code):`, scanObj);
+            // Still update seq and continue
+            continue;
+          }
+
           // New scan received - map to ScanEvent format
           const scan: ScanEvent = {
-            id: json.scan.id ?? sinceSeq,
-            code: json.scan.code,
-            timestamp: json.scan.timestamp ?? new Date().toISOString(),
+            id: typeof scanObj.id === 'number' ? scanObj.id : sinceSeq,
+            code: code,
+            timestamp: typeof scanObj.timestamp === 'string' ? scanObj.timestamp : new Date().toISOString(),
           };
           console.log(`[CameraSidecar] New scan received: ${scan.code} (id: ${scan.id}, seq: ${sinceSeq})`);
           onScan(scan);
@@ -123,8 +165,8 @@ export function startScanStream(onScan: (scan: ScanEvent) => void): () => void {
         }
 
         // Timeout or null scan - immediately loop again without delay
-        if (json.scan === null) {
-          console.log(`[CameraSidecar] Long-poll timeout, continuing immediately...`);
+        if (scanData === null || scanData === undefined) {
+          console.log(`[CameraSidecar] Long-poll timeout (seq: ${sinceSeq}), continuing immediately...`);
           // No delay - immediately continue
           continue;
         }
