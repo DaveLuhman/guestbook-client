@@ -28,14 +28,16 @@ directories = "6.0.0"
 tauri-plugin-http = "2"
 tauri-plugin-shell = "2"
 chrono = "0.4.41"
-tokio = { version = "1.0", features = ["time", "rt", "rt-multi-thread"] }
+tokio = { version = "1.0", features = ["time", "rt", "rt-multi-thread", "sync", "process"] }
 once_cell = "1.20"
 url = "2.5"
+image = "0.25"
+crossbeam-channel = "0.5"
+rxing = "0.5"
+axum = { version = "0.7", features = ["macros"], optional = true }
+tower = { version = "0.4", optional = true }
+tower-http = { version = "0.5", features = ["cors", "fs"], optional = true }
 
-# Note: Cargo warns about `debug_assertions` in target-specific dependencies,
-# but this is a valid use case for conditional compilation. The dependencies
-# will still work correctly - this is a known limitation/warning in Cargo.
-[target.'cfg(debug_assertions)'.dependencies]
-axum = { version = "0.7", features = ["macros"] }
-tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "fs"] }
+[features]
+default = []
+debug-server = ["axum", "tower", "tower-http"]

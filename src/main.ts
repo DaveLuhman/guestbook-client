@@ -653,6 +653,9 @@ function initializeCameraPreviewToggle(config: config) {
       const updatedConfig: config = await invoke('get_full_config');
       updateCameraPreviewToggle(updatedConfig.camera_preview_enabled);
 
+      // Update camera preview enabled state in Rust backend
+      await invoke('camera_set_preview_enabled', { enabled: newValue });
+
       // Update camera video display based on new setting
       updateCameraVideoDisplay(updatedConfig.camera_preview_enabled);
 
@@ -948,12 +951,13 @@ function updateCameraVideoDisplay(enabled: boolean) {
   if (!enabled) {
     // Hide the container
     videoContainer.style.display = 'none';
+    // Clear any existing preview update interval
+    if ((window as any).cameraPreviewInterval) {
+      clearInterval((window as any).cameraPreviewInterval);
+      (window as any).cameraPreviewInterval = null;
+    }
     return;
   }
-
-  // Set up MJPEG stream URL
-  const streamUrl = 'http://127.0.0.1:7313/video';
-  videoStream.src = streamUrl;
 
   // Show the container
   videoContainer.style.display = 'block';
@@ -974,13 +978,34 @@ function updateCameraVideoDisplay(enabled: boolean) {
     transform-origin: center center;
   `;
 
-  // Handle stream errors gracefully
-  videoStream.onerror = () => {
-    console.warn('[CameraVideo] Failed to load video stream - sidecar may not be running');
-    videoContainer.style.display = 'none';
-  };
+  // Update preview frame periodically using Tauri command
+  // Clear any existing interval
+  if ((window as any).cameraPreviewInterval) {
+    clearInterval((window as any).cameraPreviewInterval);
+  }
 
-  console.log('[CameraVideo] Video stream initialized');
+  // Update preview at ~8 FPS
+  (window as any).cameraPreviewInterval = setInterval(async () => {
+    try {
+      const frameData = await invoke<number[] | null>('camera_get_preview_frame');
+      if (frameData && frameData.length > 0) {
+        // Convert Uint8Array to base64 data URL
+        const uint8Array = new Uint8Array(frameData);
+        const blob = new Blob([uint8Array], { type: 'image/jpeg' });
+        const url = URL.createObjectURL(blob);
+        videoStream.src = url;
+        // Revoke old URL to prevent memory leak
+        if ((videoStream as any).previousUrl) {
+          URL.revokeObjectURL((videoStream as any).previousUrl);
+        }
+        (videoStream as any).previousUrl = url;
+      }
+    } catch (error) {
+      console.warn('[CameraVideo] Failed to get preview frame:', error);
+    }
+  }, 125); // ~8 FPS
+
+  console.log('[CameraVideo] Preview initialized with Tauri camera API');
 }
 
 (async () => {

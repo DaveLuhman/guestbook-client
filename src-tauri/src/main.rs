@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod api;
+mod camera;
 mod config;
 mod devices;
 mod hid;
@@ -8,13 +9,14 @@ mod logging;
 
 #[cfg(debug_assertions)]
 mod debug_logging;
-#[cfg(debug_assertions)]
+#[cfg(feature = "debug-server")]
 mod debug_server;
 use api::devices::{register_device, send_heartbeat, reset_device, check_network_availability, clear_orphaned_state};
 use config::config_manager::{get_full_config, set_camera_preview_enabled, ConfigManager};
 use devices::barcode::{listen_to_barcode, open_symbol_scanner};
 use devices::magtek::{listen_to_magtek, open_magtek_reader};
 use hid::manager::{HIDManager, DeviceConnectionState};
+use camera::manager::{CameraManager, CameraOptions, CameraStatus};
 use tauri::WebviewWindow;
 use tauri::Manager;
 use tauri::Listener;
@@ -540,6 +542,53 @@ fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+#[tauri::command]
+async fn camera_start(
+    camera_manager: tauri::State<'_, Arc<Mutex<CameraManager>>>,
+    options: Option<CameraOptions>,
+) -> Result<(), String> {
+    // start is now synchronous, so we can call it directly
+    camera_manager.lock().unwrap().start(options)
+}
+
+#[tauri::command]
+fn camera_stop(
+    camera_manager: tauri::State<'_, Arc<Mutex<CameraManager>>>,
+) -> Result<(), String> {
+    // stop is now synchronous, so we can call it directly
+    camera_manager.lock().unwrap().stop()
+}
+
+#[tauri::command]
+fn camera_set_preview_enabled(
+    camera_manager: tauri::State<'_, Arc<Mutex<CameraManager>>>,
+    enabled: bool,
+) -> Result<(), String> {
+    camera_manager.lock().unwrap().set_preview_enabled(enabled)
+}
+
+#[tauri::command]
+fn camera_set_scanning_enabled(
+    camera_manager: tauri::State<'_, Arc<Mutex<CameraManager>>>,
+    enabled: bool,
+) -> Result<(), String> {
+    camera_manager.lock().unwrap().set_scanning_enabled(enabled)
+}
+
+#[tauri::command]
+fn camera_get_status(
+    camera_manager: tauri::State<'_, Arc<Mutex<CameraManager>>>,
+) -> Result<CameraStatus, String> {
+    Ok(camera_manager.lock().unwrap().get_status())
+}
+
+#[tauri::command]
+fn camera_get_preview_frame(
+    camera_manager: tauri::State<'_, Arc<Mutex<CameraManager>>>,
+) -> Result<Option<Vec<u8>>, String> {
+    Ok(camera_manager.lock().unwrap().get_latest_preview_frame())
+}
+
 // Scanner process state holder
 struct ScannerProc(Mutex<Option<Child>>);
 // Last error from scanner process
@@ -866,16 +915,22 @@ fn main() {
     let scanner_error = ScannerError(Arc::new(Mutex::new(None)));
     let last_scanned_id = LastScannedId(Arc::new(Mutex::new(None)));
 
+    // Initialize camera manager
+    let camera_manager = CameraManager::new();
+
     // Build the Tauri builder with conditional devtools plugin
     let builder = {
-        let mut b = tauri::Builder::default()
+        let b = tauri::Builder::default()
             .plugin(tauri_plugin_http::init())
             .plugin(tauri_plugin_shell::init());
         #[cfg(debug_assertions)] // only enable instrumentation in development builds
         {
-            b = b.plugin(tauri_plugin_devtools::init());
+            b.plugin(tauri_plugin_devtools::init())
         }
-        b
+        #[cfg(not(debug_assertions))]
+        {
+            b
+        }
     };
     builder
         .manage(config_manager)
@@ -883,6 +938,7 @@ fn main() {
         .manage(scanner_proc)
         .manage(scanner_error)
         .manage(last_scanned_id)
+        .manage(Arc::new(Mutex::new(camera_manager)))
         .invoke_handler(tauri::generate_handler![
             get_hid_devices,
             start_barcode_listener,
@@ -910,12 +966,18 @@ fn main() {
             start_camera_sidecar,
             stop_camera_sidecar,
             get_camera_sidecar_status,
+            camera_start,
+            camera_stop,
+            camera_set_preview_enabled,
+            camera_set_scanning_enabled,
+            camera_get_status,
+            camera_get_preview_frame,
             #[cfg(debug_assertions)]
             log_frontend_message,
         ])
         .setup(|app| {
             // Start debug HTTP server for remote log viewing (debug builds only)
-            #[cfg(debug_assertions)]
+            #[cfg(feature = "debug-server")]
             {
                 let debug_port = 7314;
                 // Use Tauri's async runtime to spawn the server task
@@ -942,6 +1004,23 @@ fn main() {
             if let Err(e) = hid_manager.start_initial_connection() {
                 log::error!("Failed to start HID device monitoring: {}", e);
             }
+
+            // Initialize camera manager with app handle
+            if let Some(camera_manager) = app.try_state::<Arc<Mutex<CameraManager>>>() {
+                {
+                    let mut manager = camera_manager.lock().unwrap();
+                    manager.set_app_handle(app.handle().clone());
+                }
+
+                // Start camera on app start (safe mode)
+                // Start is now synchronous, so we can call it directly
+                if let Err(e) = camera_manager.lock().unwrap().start(None) {
+                    log::warn!("Failed to start camera on app start: {}", e);
+                }
+            }
+
+            // Camera preview will be served via Tauri command (get_camera_preview_frame)
+            // This avoids the complexity of custom protocol registration in Tauri 2.0
 
             // Cleanup scanner sidecar on app exit
             let app_handle = app.handle().clone();

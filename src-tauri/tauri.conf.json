@@ -32,7 +32,7 @@
         "font-src": [
           "https://fonts.gstatic.com"
         ],
-        "img-src": "'self' asset: http://asset.localhost http://127.0.0.1:7313 blob: data:",
+        "img-src": "'self' asset: http://asset.localhost http://127.0.0.1:7313 blob: data: tauri://camera-preview",
         "media-src": "'self' blob:",
         "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com"
       }

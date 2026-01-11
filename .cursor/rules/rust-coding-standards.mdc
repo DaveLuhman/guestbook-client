@@ -1,0 +1,21 @@
+# Rust Coding Standards
+
+## Unused Code Handling
+
+- **Unused imports must be removed**, not suppressed with `#[allow(dead_code)]` or similar attributes
+- When resolving compiler warnings about unused imports, delete the unused import statement
+- `#[allow(dead_code)]` should only be used for struct fields, enum variants, or functions that are part of a public API or work-in-progress code that will be used in the future
+- Never use `#[allow(dead_code)]` to silence warnings about unused imports - imports are easy to remove and re-add if needed
+
+## Dead Code Attributes
+
+- Use `#[allow(dead_code)]` sparingly and only when:
+  - The code is part of a public API that external code may use
+  - The code is work-in-progress and will be used soon
+  - The code is intentionally kept for future use or debugging
+- Prefer removing truly unused code over suppressing warnings
+- Document why `#[allow(dead_code)]` is necessary if it's not immediately obvious
+
+---
+alwaysApply: true
+---

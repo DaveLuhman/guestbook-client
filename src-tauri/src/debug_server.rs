@@ -1,30 +1,30 @@
 // Debug-only HTTP server for remote log viewing
-// This module is only compiled in debug builds
+// This module is only compiled when debug-server feature is enabled
 
-#[cfg(debug_assertions)]
+#[cfg(feature = "debug-server")]
 use axum::{
     extract::Query,
     response::{Html, Json},
     routing::get,
     Router,
 };
-#[cfg(debug_assertions)]
+#[cfg(feature = "debug-server")]
 use crate::debug_logging::{get_debug_logger, LogEntry};
-#[cfg(debug_assertions)]
+#[cfg(feature = "debug-server")]
 use serde::{Deserialize, Serialize};
-#[cfg(debug_assertions)]
+#[cfg(feature = "debug-server")]
 use std::collections::HashMap;
-#[cfg(debug_assertions)]
+#[cfg(feature = "debug-server")]
 use std::net::SocketAddr;
 
-#[cfg(debug_assertions)]
+#[cfg(feature = "debug-server")]
 #[derive(Deserialize)]
 struct LogQuery {
     limit: Option<usize>,
     since_id: Option<usize>,
 }
 
-#[cfg(debug_assertions)]
+#[cfg(feature = "debug-server")]
 #[derive(Serialize)]
 struct LogResponse {
     logs: Vec<LogEntry>,
@@ -32,7 +32,7 @@ struct LogResponse {
     next_id: usize,
 }
 
-#[cfg(debug_assertions)]
+#[cfg(feature = "debug-server")]
 async fn get_logs_handler(Query(params): Query<LogQuery>) -> Json<LogResponse> {
     let logger = get_debug_logger();
     let total = logger.count();
@@ -52,7 +52,7 @@ async fn get_logs_handler(Query(params): Query<LogQuery>) -> Json<LogResponse> {
     })
 }
 
-#[cfg(debug_assertions)]
+#[cfg(feature = "debug-server")]
 async fn clear_logs_handler() -> Json<HashMap<&'static str, &'static str>> {
     let logger = get_debug_logger();
     logger.clear_logs();
@@ -61,12 +61,12 @@ async fn clear_logs_handler() -> Json<HashMap<&'static str, &'static str>> {
     Json(response)
 }
 
-#[cfg(debug_assertions)]
+#[cfg(feature = "debug-server")]
 async fn logs_page_handler() -> Html<String> {
     Html(include_str!("debug_logs.html").to_string())
 }
 
-#[cfg(debug_assertions)]
+#[cfg(feature = "debug-server")]
 pub async fn start_debug_server(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     let app = Router::new()
         .route("/", get(logs_page_handler))
@@ -92,7 +92,7 @@ pub async fn start_debug_server(port: u16) -> Result<(), Box<dyn std::error::Err
 }
 
 // Stub for release builds
-#[cfg(not(debug_assertions))]
+#[cfg(not(feature = "debug-server"))]
 pub async fn start_debug_server(_port: u16) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
