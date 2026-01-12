@@ -145,8 +145,12 @@ impl CameraManager {
         // Extract app_handle before any operations
         let app_handle_clone = self.app_handle.as_ref().map(|h| h.clone());
 
+        // Get the runtime handle for passing to CameraCapture
+        // We use try_current() since start() is synchronous but called from async context
+        let runtime_handle = tokio::runtime::Handle::try_current().ok();
+
         // Start capture subsystem (synchronous)
-        let capture = CameraCapture::new(main_w, main_h, preview_w, preview_h)
+        let capture = CameraCapture::new_with_handle(main_w, main_h, preview_w, preview_h, runtime_handle)
             .map_err(|e| {
                 let err_msg = format!("Failed to start camera capture: {}", e);
                 {

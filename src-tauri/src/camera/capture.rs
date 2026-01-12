@@ -42,6 +42,16 @@ impl CameraCapture {
         preview_width: u32,
         preview_height: u32,
     ) -> Result<Self, String> {
+        Self::new_with_handle(main_width, main_height, preview_width, preview_height, None)
+    }
+
+    pub fn new_with_handle(
+        main_width: u32,
+        main_height: u32,
+        preview_width: u32,
+        preview_height: u32,
+        runtime_handle: Option<tokio::runtime::Handle>,
+    ) -> Result<Self, String> {
         log::info!(
             "Initializing camera capture: main={}x{}, preview={}x{}",
             main_width,
@@ -76,6 +86,7 @@ impl CameraCapture {
             preview_tx.clone(),
             running.clone(),
             seq_counter.clone(),
+            runtime_handle,
         )?;
 
         Ok(Self {
@@ -102,6 +113,7 @@ impl CameraCapture {
         preview_tx: Sender<Frame>,
         running: Arc<Mutex<bool>>,
         seq_counter: Arc<Mutex<u64>>,
+        runtime_handle: Option<tokio::runtime::Handle>,
     ) -> Result<std::process::Child, String> {
         // Use rpicam-vid with MJPEG output to stdout
         // We'll parse the MJPEG stream to extract individual frames
@@ -133,7 +145,12 @@ impl CameraCapture {
         let running_clone = running.clone();
         let seq_counter_clone = seq_counter.clone();
 
-        tokio::spawn(async move {
+        // Get the Tokio runtime handle - use provided handle or try to get current one
+        let handle = runtime_handle
+            .or_else(|| tokio::runtime::Handle::try_current().ok())
+            .ok_or_else(|| "No Tokio runtime available. Camera capture must be started from an async context.")?;
+
+        handle.spawn(async move {
             use tokio::io::AsyncReadExt;
             let mut reader = tokio::io::BufReader::new(tokio::process::ChildStdout::from_std(stdout).map_err(|e| {
                 log::error!("Failed to convert stdout: {}", e);
@@ -222,7 +239,7 @@ impl CameraCapture {
         });
 
         // Spawn error reader
-        tokio::spawn(async move {
+        handle.spawn(async move {
             use tokio::io::AsyncBufReadExt;
             let mut reader = tokio::io::BufReader::new(tokio::process::ChildStderr::from_std(stderr).map_err(|e| {
                 log::error!("Failed to convert stderr: {}", e);
