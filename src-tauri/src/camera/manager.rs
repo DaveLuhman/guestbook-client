@@ -167,15 +167,15 @@ impl CameraManager {
         // Start preview subsystem
         let preview = PreviewManager::new(preview_w, preview_h, preview_fps);
 
-        // Start barcode decoder (BarcodeDecoder::new is async, use blocking runtime)
-        let decoder = tokio::runtime::Handle::current().block_on(BarcodeDecoder::new(
+        // Start barcode decoder (now synchronous)
+        let decoder = BarcodeDecoder::new(
             main_w,
             main_h,
             roi_scale,
             roi_h,
             scan_fps,
             app_handle_clone,
-        ))
+        )
         .map_err(|e| {
             let err_msg = format!("Failed to start barcode decoder: {}", e);
             {
@@ -194,7 +194,7 @@ impl CameraManager {
         // Spawn background tasks to process frames (clone Arcs before spawning)
         let capture_ref = self.capture.clone();
         let preview_ref = self.preview.clone();
-        let decoder_ref = self.decoder.clone();
+        let _decoder_ref = self.decoder.clone(); // Reserved for future barcode processing
         let preview_enabled_ref = self.preview_enabled.clone();
         let scanning_enabled_ref = self.scanning_enabled.clone();
 
@@ -287,14 +287,14 @@ impl CameraManager {
         let preview = self.preview.lock().unwrap().take();
         let capture = self.capture.lock().unwrap().take();
 
-        // Stop decoder first (async - use blocking runtime)
+        // Stop decoder first (now synchronous)
         if let Some(decoder) = decoder {
-            tokio::runtime::Handle::current().block_on(decoder.stop());
+            decoder.stop();
         }
 
-        // Stop preview (async - use blocking runtime)
+        // Stop preview (now synchronous)
         if let Some(preview) = preview {
-            tokio::runtime::Handle::current().block_on(preview.stop());
+            preview.stop();
         }
 
         // Stop capture last (synchronous)

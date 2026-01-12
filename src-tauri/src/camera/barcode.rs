@@ -23,7 +23,7 @@ pub struct BarcodeDecoder {
 }
 
 impl BarcodeDecoder {
-    pub async fn new(
+    pub fn new(
         width: u32,
         height: u32,
         roi_w: f64,
@@ -50,6 +50,7 @@ impl BarcodeDecoder {
         log::info!("Barcode decoder {}", if enabled { "enabled" } else { "disabled" });
     }
 
+    #[allow(dead_code)] // Reserved for future use when Send safety is resolved
     pub async fn process_frame(&self, frame: Frame) -> Result<(), String> {
         // Check if enabled
         if !*self.enabled.lock().unwrap() {
@@ -137,7 +138,7 @@ impl BarcodeDecoder {
         }
     }
 
-    pub async fn stop(&self) {
+    pub fn stop(&self) {
         *self.running.lock().unwrap() = false;
         log::info!("Barcode decoder stopped");
     }

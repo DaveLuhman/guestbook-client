@@ -39,7 +39,7 @@ impl PreviewManager {
         self.latest_frame.lock().unwrap().clone()
     }
 
-    pub async fn stop(&self) {
+    pub fn stop(&self) {
         *self.running.lock().unwrap() = false;
         *self.latest_frame.lock().unwrap() = None;
         log::info!("Preview manager stopped");

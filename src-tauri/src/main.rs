@@ -586,7 +586,9 @@ fn camera_get_status(
 fn camera_get_preview_frame(
     camera_manager: tauri::State<'_, Arc<Mutex<CameraManager>>>,
 ) -> Result<Option<Vec<u8>>, String> {
-    Ok(camera_manager.lock().unwrap().get_latest_preview_frame())
+    camera_manager.lock()
+        .map_err(|e| format!("Failed to lock camera manager: {}", e))
+        .map(|manager| manager.get_latest_preview_frame())
 }
 
 // Scanner process state holder
