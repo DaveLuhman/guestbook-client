@@ -1006,13 +1006,9 @@ fn main() {
             }
 
             // Initialize camera manager with app handle
-            if let Some(camera_manager) = app.try_state::<Arc<Mutex<CameraManager>>>() {
-                {
-                    let mut manager = camera_manager.lock().unwrap();
-                    manager.set_app_handle(app.handle().clone());
-                }
-
-                // Get config to check if preview should be enabled
+            // Extract values before any async operations to avoid lifetime issues
+            let (camera_manager_opt, preview_enabled_val, app_handle_val) = {
+                let camera_mgr = app.try_state::<Arc<Mutex<CameraManager>>>().map(|cm| cm.inner().clone());
                 let preview_enabled = if let Some(config_manager) = app.try_state::<ConfigManager>() {
                     config_manager.get_config()
                         .ok()
@@ -1021,19 +1017,42 @@ fn main() {
                 } else {
                     false
                 };
+                let app_handle = app.handle().clone();
+                (camera_mgr, preview_enabled, app_handle)
+            };
 
-                // Start camera on app start (safe mode)
-                // Start is now synchronous, so we can call it directly
-                if let Err(e) = camera_manager.lock().unwrap().start(None) {
-                    log::warn!("Failed to start camera on app start: {}", e);
-                } else {
-                    // Enable preview if configured
-                    if preview_enabled {
-                        if let Err(e) = camera_manager.lock().unwrap().set_preview_enabled(true) {
-                            log::warn!("Failed to enable camera preview: {}", e);
+            if let Some(camera_manager) = camera_manager_opt {
+                {
+                    let mut manager = camera_manager.lock().unwrap();
+                    manager.set_app_handle(app_handle_val);
+                }
+
+                // Start camera on app start using Tauri's async runtime
+                // We need to spawn this in an async context to get a runtime handle
+                let camera_manager_clone = camera_manager.clone();
+                let preview_enabled_clone = preview_enabled_val;
+                tauri::async_runtime::spawn(async move {
+                    log::info!("Attempting to start camera subsystem...");
+                    match camera_manager_clone.lock().unwrap().start(None) {
+                        Ok(_) => {
+                            log::info!("Camera subsystem started successfully");
+                            // Enable preview if configured
+                            if preview_enabled_clone {
+                                log::info!("Enabling camera preview (config: camera_preview_enabled=true)");
+                                if let Err(e) = camera_manager_clone.lock().unwrap().set_preview_enabled(true) {
+                                    log::error!("Failed to enable camera preview: {}", e);
+                                } else {
+                                    log::info!("Camera preview enabled successfully");
+                                }
+                            } else {
+                                log::info!("Camera preview disabled (config: camera_preview_enabled=false)");
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Failed to start camera on app start: {}", e);
                         }
                     }
-                }
+                });
             }
 
             // Camera preview will be served via Tauri command (get_camera_preview_frame)

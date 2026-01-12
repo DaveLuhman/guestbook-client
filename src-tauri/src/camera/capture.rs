@@ -138,14 +138,25 @@ impl CameraCapture {
 
         // Get the Tokio runtime handle - use provided handle or try to get current one
         let handle = runtime_handle
-            .or_else(|| tokio::runtime::Handle::try_current().ok())
-            .ok_or_else(|| "No Tokio runtime available. Camera capture must be started from an async context.")?;
+            .or_else(|| {
+                log::debug!("Runtime handle not provided, trying to get current handle...");
+                tokio::runtime::Handle::try_current().ok()
+            })
+            .ok_or_else(|| {
+                let err_msg = "No Tokio runtime available. Camera capture must be started from an async context or with a runtime handle.";
+                log::error!("{}", err_msg);
+                err_msg.to_string()
+            })?;
+        
+        log::info!("Using Tokio runtime handle for camera capture");
 
+        log::info!("Spawning frame parsing task for rpicam-vid output");
         handle.spawn(async move {
             use tokio::io::AsyncReadExt;
             let mut reader = tokio::io::BufReader::new(tokio::process::ChildStdout::from_std(stdout).map_err(|e| {
                 log::error!("Failed to convert stdout: {}", e);
             }).unwrap());
+            log::info!("Frame parsing task started, reading from rpicam-vid stdout");
             let mut buffer = vec![0u8; 4096];
             let mut frame_buffer = Vec::new();
             let mut in_frame = false;
@@ -196,7 +207,9 @@ impl CameraCapture {
                                         };
 
                                         // Send main frame (drop if channel full - latest-frame-only)
-                                        let _ = main_tx_clone.try_send(main_frame);
+                                        if main_tx_clone.try_send(main_frame).is_err() {
+                                            log::debug!("Main frame channel full, dropping frame");
+                                        }
 
                                         // Send preview frame every other frame
                                         skip_preview_counter += 1;
@@ -211,7 +224,11 @@ impl CameraCapture {
                                             };
 
                                             // Send preview frame (drop if channel full)
-                                            let _ = preview_tx_clone.try_send(preview_frame);
+                                            if preview_tx_clone.try_send(preview_frame).is_err() {
+                                                log::debug!("Preview frame channel full, dropping frame");
+                                            } else {
+                                                log::debug!("Sent preview frame {} ({} bytes)", seq, frame_buffer.len());
+                                            }
                                         }
 
                                         frame_buffer.clear();

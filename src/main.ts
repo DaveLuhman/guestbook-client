@@ -427,6 +427,9 @@ async function openConfig() {
 
       // Initialize camera preview toggle
       initializeCameraPreviewToggle(config);
+
+      // Load camera status
+      await updateCameraStatus();
     } catch (error) {
       console.error('Failed to load config:', error);
       const errorMsg =
@@ -657,6 +660,9 @@ function initializeCameraPreviewToggle(config: config) {
       // Update camera video display based on new setting
       updateCameraVideoDisplay(updatedConfig.camera_preview_enabled);
 
+      // Update camera status display
+      await updateCameraStatus();
+
       soundManager.playBeep(700, 120);
     } catch (error) {
       console.error('Failed to toggle camera preview:', error);
@@ -664,6 +670,50 @@ function initializeCameraPreviewToggle(config: config) {
       errorHandler.handleApplicationError('config', errorMsg, 'medium');
     }
   });
+}
+
+async function updateCameraStatus() {
+  try {
+    const status = await invoke<{
+      running: boolean;
+      preview_enabled: boolean;
+      scanning_enabled: boolean;
+      active_profile: string;
+      last_error: string | null;
+    }>('camera_get_status');
+    
+    const statusElement = document.getElementById('config-camera-status');
+    const errorElement = document.getElementById('config-camera-error');
+    
+    if (statusElement) {
+      const parts = [];
+      parts.push(status.running ? 'Running' : 'Stopped');
+      parts.push(`Preview: ${status.preview_enabled ? 'On' : 'Off'}`);
+      parts.push(`Scanning: ${status.scanning_enabled ? 'On' : 'Off'}`);
+      parts.push(`Profile: ${status.active_profile}`);
+      statusElement.textContent = parts.join(' | ');
+    }
+    
+    if (errorElement) {
+      errorElement.textContent = status.last_error || 'None';
+      if (status.last_error) {
+        errorElement.style.color = '#ff4444';
+      } else {
+        errorElement.style.color = '';
+      }
+    }
+  } catch (error) {
+    const statusElement = document.getElementById('config-camera-status');
+    const errorElement = document.getElementById('config-camera-error');
+    if (statusElement) {
+      statusElement.textContent = 'Error loading status';
+      statusElement.style.color = '#ff4444';
+    }
+    if (errorElement) {
+      errorElement.textContent = error instanceof Error ? error.message : String(error);
+      errorElement.style.color = '#ff4444';
+    }
+  }
 }
 
 function updateCameraPreviewToggle(enabled: boolean) {

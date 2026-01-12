@@ -1,4 +1,5 @@
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU32, Ordering};
 use serde::{Deserialize, Serialize};
 
 use crate::camera::capture::CameraCapture;
@@ -146,8 +147,12 @@ impl CameraManager {
         let app_handle_clone = self.app_handle.as_ref().map(|h| h.clone());
 
         // Get the runtime handle for passing to CameraCapture
-        // We use try_current() since start() is synchronous but called from async context
-        let runtime_handle = tokio::runtime::Handle::try_current().ok();
+        // Since start() might be called from async context, try to get current handle
+        let runtime_handle = tokio::runtime::Handle::try_current()
+            .map_err(|_| {
+                log::warn!("No Tokio runtime handle available in start() - camera capture may fail");
+            })
+            .ok();
 
         // Start capture subsystem (synchronous)
         let capture = CameraCapture::new_with_handle(main_w, main_h, preview_w, preview_h, runtime_handle)
@@ -248,9 +253,18 @@ impl CameraManager {
                 };
 
                 if let Some(data) = frame_data {
+                    let data_len = data.len();
                     let preview_guard = preview_ref.lock().unwrap();
                     if let Some(preview) = preview_guard.as_ref() {
                         preview.update_frame(data);
+                        log::debug!("Updated preview frame ({} bytes)", data_len);
+                    }
+                } else {
+                    // Log occasionally when no frames are available
+                    static FRAME_MISS_COUNT: AtomicU32 = AtomicU32::new(0);
+                    let count = FRAME_MISS_COUNT.fetch_add(1, Ordering::Relaxed);
+                    if count % 30 == 0 { // Log every 30 misses (~4 seconds at 8 FPS)
+                        log::debug!("No preview frames available from capture (miss count: {})", count);
                     }
                 }
             }
