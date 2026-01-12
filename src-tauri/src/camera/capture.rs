@@ -36,15 +36,6 @@ pub struct CameraCapture {
 }
 
 impl CameraCapture {
-    pub fn new(
-        main_width: u32,
-        main_height: u32,
-        preview_width: u32,
-        preview_height: u32,
-    ) -> Result<Self, String> {
-        Self::new_with_handle(main_width, main_height, preview_width, preview_height, None)
-    }
-
     pub fn new_with_handle(
         main_width: u32,
         main_height: u32,

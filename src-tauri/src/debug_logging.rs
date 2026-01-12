@@ -44,6 +44,7 @@ impl DebugLogger {
         logs.push_back(entry);
     }
 
+    #[cfg(feature = "debug-server")]
     pub fn get_logs(&self, limit: Option<usize>) -> Vec<LogEntry> {
         let logs = self.logs.lock().unwrap();
         let limit = limit.unwrap_or(MAX_LOG_ENTRIES);
@@ -55,6 +56,7 @@ impl DebugLogger {
             .collect()
     }
 
+    #[cfg(feature = "debug-server")]
     pub fn get_logs_since(&self, since_id: usize) -> Vec<LogEntry> {
         let logs = self.logs.lock().unwrap();
         logs.iter()
@@ -63,11 +65,13 @@ impl DebugLogger {
             .collect()
     }
 
+    #[cfg(feature = "debug-server")]
     pub fn clear_logs(&self) {
         let mut logs = self.logs.lock().unwrap();
         logs.clear();
     }
 
+    #[cfg(feature = "debug-server")]
     pub fn count(&self) -> usize {
         let logs = self.logs.lock().unwrap();
         logs.len()
@@ -107,7 +111,7 @@ pub fn add_backend_log(level: String, target: String, message: String) {
     DEBUG_LOGGER.add_log(entry);
 }
 
-#[cfg(debug_assertions)]
+#[cfg(feature = "debug-server")]
 pub fn get_debug_logger() -> &'static DebugLogger {
     &DEBUG_LOGGER
 }

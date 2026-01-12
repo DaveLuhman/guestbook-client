@@ -50,7 +50,6 @@ impl BarcodeDecoder {
         log::info!("Barcode decoder {}", if enabled { "enabled" } else { "disabled" });
     }
 
-    #[allow(dead_code)]
     pub async fn process_frame(&self, frame: Frame) -> Result<(), String> {
         // Check if enabled
         if !*self.enabled.lock().unwrap() {

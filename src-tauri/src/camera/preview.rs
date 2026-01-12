@@ -29,11 +29,10 @@ impl PreviewManager {
     }
 
     pub fn update_frame(&self, jpeg_data: Vec<u8>) {
-        // Only update if enabled (saves CPU when preview is off)
-        if *self.enabled.lock().unwrap() {
-            let mut frame = self.latest_frame.lock().unwrap();
-            *frame = Some(jpeg_data);
-        }
+        // Always update the latest frame - the enabled check is done in the manager's loop
+        // This ensures frames are available when preview is enabled
+        let mut frame = self.latest_frame.lock().unwrap();
+        *frame = Some(jpeg_data);
     }
 
     pub fn get_latest_frame(&self) -> Option<Vec<u8>> {

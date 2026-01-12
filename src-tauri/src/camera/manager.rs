@@ -189,7 +189,7 @@ impl CameraManager {
         // Spawn background tasks to process frames (clone Arcs before spawning)
         let capture_ref = self.capture.clone();
         let preview_ref = self.preview.clone();
-        let _decoder_ref = self.decoder.clone();
+        let decoder_ref = self.decoder.clone();
         let preview_enabled_ref = self.preview_enabled.clone();
         let scanning_enabled_ref = self.scanning_enabled.clone();
 
@@ -205,24 +205,25 @@ impl CameraManager {
                     continue;
                 }
 
-                let frame = {
+                // Get frame data (clone to avoid holding MutexGuard across await)
+                let frame_data = {
                     let capture_guard = capture_ref2.lock().unwrap();
                     if let Some(capture) = capture_guard.as_ref() {
-                        capture.get_main_frame()
+                        capture.get_main_frame().map(|f| f.data.clone())
                     } else {
                         None
                     }
                 };
 
-                if let Some(frame) = frame {
-                    // TODO: Fix Send issue - can't hold MutexGuard across await
+                if let Some(frame_data) = frame_data {
+                    // TODO: Fix barcode processing - need to restructure to avoid Send issues
+                    // The issue is that process_frame requires &self but we can't hold MutexGuard across await
                     // Options:
-                    // 1. Use channels to send frames to decoder task
-                    // 2. Make decoder processing synchronous where possible
-                    // 3. Restructure decoder to not require holding guard
-                    // For now, temporarily disabled to allow compilation
-                    let _ = frame; // Suppress unused warning
-                    log::debug!("Frame received - barcode processing needs architectural fix for Send safety");
+                    // 1. Use a channel to send frames to a dedicated decoder task
+                    // 2. Restructure process_frame to take needed data as parameters
+                    // 3. Use spawn_blocking with block_on
+                    // For now, just log that we're receiving frames
+                    log::debug!("Frame received for barcode processing ({} bytes) - processing disabled due to Send safety", frame_data.len());
                 }
             }
         });

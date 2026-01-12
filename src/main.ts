@@ -614,10 +614,8 @@ const configFieldMap: Record<keyof config, {
     id: 'config-first-run',
     transform: (v: boolean) => v ? 'Yes' : 'No'
   },
-  camera_preview_enabled: {
-    id: 'config-camera-preview-enabled',
-    transform: (v: boolean) => v ? 'Yes' : 'No'
-  },
+  // camera_preview_enabled is handled separately by updateCameraPreviewToggle()
+  // so it's not included in this map
 };
 
 function updateConfigDisplay(config: config) {
@@ -999,6 +997,12 @@ function updateCameraVideoDisplay(enabled: boolean) {
           URL.revokeObjectURL((videoStream as any).previousUrl);
         }
         (videoStream as any).previousUrl = url;
+      } else {
+        // Log when no frame data is received (but not every time to avoid spam)
+        if (!(videoStream as any).lastNoFrameLog || Date.now() - (videoStream as any).lastNoFrameLog > 5000) {
+          console.debug('[CameraVideo] No frame data received');
+          (videoStream as any).lastNoFrameLog = Date.now();
+        }
       }
     } catch (error) {
       console.warn('[CameraVideo] Failed to get preview frame:', error);

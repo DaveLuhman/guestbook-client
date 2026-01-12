@@ -1012,10 +1012,27 @@ fn main() {
                     manager.set_app_handle(app.handle().clone());
                 }
 
+                // Get config to check if preview should be enabled
+                let preview_enabled = if let Some(config_manager) = app.try_state::<ConfigManager>() {
+                    config_manager.get_config()
+                        .ok()
+                        .map(|c| c.camera_preview_enabled)
+                        .unwrap_or(false)
+                } else {
+                    false
+                };
+
                 // Start camera on app start (safe mode)
                 // Start is now synchronous, so we can call it directly
                 if let Err(e) = camera_manager.lock().unwrap().start(None) {
                     log::warn!("Failed to start camera on app start: {}", e);
+                } else {
+                    // Enable preview if configured
+                    if preview_enabled {
+                        if let Err(e) = camera_manager.lock().unwrap().set_preview_enabled(true) {
+                            log::warn!("Failed to enable camera preview: {}", e);
+                        }
+                    }
                 }
             }
 
