@@ -970,8 +970,6 @@ function updateCameraVideoDisplay(enabled: boolean) {
     max-height: 300px;
     border: 2px solid #0066cc;
     border-radius: 8px;
-    transform: rotate(-90deg);
-    transform-origin: center center;
   `;
 
   // Handle stream errors gracefully
