@@ -946,8 +946,13 @@ function updateCameraVideoDisplay(enabled: boolean) {
   }
 
   if (!enabled) {
-    // Hide the container
+    // Hide the container and ensure it doesn't block interactions
     videoContainer.style.display = 'none';
+    videoContainer.style.pointerEvents = 'none';
+    videoContainer.style.cssText = 'display: none; pointer-events: none;';
+    // Clear video source to stop loading
+    videoStream.src = '';
+    videoStream.style.cssText = '';
     return;
   }
 
@@ -955,17 +960,16 @@ function updateCameraVideoDisplay(enabled: boolean) {
   const streamUrl = 'http://127.0.0.1:7313/video';
   videoStream.src = streamUrl;
 
-  // Show the container
-  videoContainer.style.display = 'block';
-
-  // Add some basic styling for the video
-  videoContainer.style.cssText += `
+  // Show the container and ensure it can receive pointer events
+  videoContainer.style.cssText = `
+    display: block;
+    pointer-events: auto;
     margin-top: -50px;
     text-align: center;
     max-width: 100%;
     overflow: visible;
   `;
-  videoStream.style.cssText += `
+  videoStream.style.cssText = `
     max-width: 100%;
     max-height: 300px;
     border: 2px solid #0066cc;
@@ -976,6 +980,7 @@ function updateCameraVideoDisplay(enabled: boolean) {
   videoStream.onerror = () => {
     console.warn('[CameraVideo] Failed to load video stream - sidecar may not be running');
     videoContainer.style.display = 'none';
+    videoContainer.style.pointerEvents = 'none';
   };
 
   console.log('[CameraVideo] Video stream initialized');
