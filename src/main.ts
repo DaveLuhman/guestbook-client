@@ -36,14 +36,26 @@ function initializeMenu() {
   const resetDeviceBtn = document.getElementById('reset-device-btn');
   const restartApplianceBtn = document.getElementById('restart-appliance-btn');
 
-  if (!menuTrigger || !menuModal) return;
+  if (!menuTrigger || !menuModal) {
+    console.error('[Menu] Failed to find menu trigger or modal element');
+    return;
+  }
+
+  // Ensure menu trigger is visible and clickable
+  menuTrigger.style.pointerEvents = 'auto';
+  menuTrigger.style.zIndex = '9999';
+
+  console.log('[Menu] Menu trigger initialized', menuTrigger);
 
   // 3-second press detection - only for left mouse button
   menuTrigger.addEventListener('mousedown', (e: MouseEvent) => {
+    console.log('[Menu] Mouse down detected on menu trigger', e.button);
     // Only handle left mouse button (button === 0)
     // Allow right-clicks to pass through for devtools
     if (e.button === 0) {
+      console.log('[Menu] Starting 3-second timer for menu');
       menuPressTimer = setTimeout(() => {
+        console.log('[Menu] Timer expired, opening menu');
         openMenu();
       }, 3000);
     }
@@ -959,12 +971,13 @@ function updateCameraVideoDisplay(enabled: boolean) {
 
   if (!enabled) {
     // Hide the container and ensure it doesn't block interactions
-    videoContainer.style.display = 'none';
-    videoContainer.style.pointerEvents = 'none';
-    videoContainer.style.cssText = 'display: none; pointer-events: none;';
+    // Use cssText to completely reset all styles
+    videoContainer.style.cssText = 'display: none !important; pointer-events: none !important; visibility: hidden !important; position: absolute !important; left: -9999px !important; z-index: -1 !important;';
     // Clear video source to stop loading
     videoStream.src = '';
     videoStream.style.cssText = '';
+    // Also ensure the image element doesn't block
+    videoStream.style.pointerEvents = 'none';
     return;
   }
 

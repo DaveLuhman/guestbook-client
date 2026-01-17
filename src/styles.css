@@ -183,10 +183,15 @@ h1 {
   right: 0;
   width: 80px;
   height: 80px;
-  z-index: 1000;
+  z-index: 9999;
   cursor: pointer;
-  /* Allow right-clicks to pass through for devtools access */
+  /* Ensure it's always on top and clickable */
   pointer-events: auto;
+  /* Ensure no other styles interfere */
+  background: transparent;
+  border: none;
+  margin: 0;
+  padding: 0;
 }
 
 /* Menu modal */
