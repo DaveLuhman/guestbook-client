@@ -38,15 +38,20 @@ function initializeMenu() {
 
   if (!menuTrigger || !menuModal) return;
 
-  // 3-second press detection
-  menuTrigger.addEventListener('mousedown', () => {
-    menuPressTimer = setTimeout(() => {
-      openMenu();
-    }, 3000);
+  // 3-second press detection - only for left mouse button
+  menuTrigger.addEventListener('mousedown', (e: MouseEvent) => {
+    // Only handle left mouse button (button === 0)
+    // Allow right-clicks to pass through for devtools
+    if (e.button === 0) {
+      menuPressTimer = setTimeout(() => {
+        openMenu();
+      }, 3000);
+    }
   });
 
-  menuTrigger.addEventListener('mouseup', () => {
-    if (menuPressTimer) {
+  menuTrigger.addEventListener('mouseup', (e: MouseEvent) => {
+    // Only handle left mouse button
+    if (e.button === 0 && menuPressTimer) {
       clearTimeout(menuPressTimer);
       menuPressTimer = null;
     }
@@ -57,6 +62,13 @@ function initializeMenu() {
       clearTimeout(menuPressTimer);
       menuPressTimer = null;
     }
+  });
+
+  // Explicitly allow context menu (right-click) to pass through
+  // Don't prevent default - allow right-click menu to appear
+  // This enables devtools access in dev mode
+  menuTrigger.addEventListener('contextmenu', () => {
+    // Intentionally empty - allows context menu to appear
   });
 
   // Touch events for mobile/touchscreen

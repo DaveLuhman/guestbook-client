@@ -185,6 +185,8 @@ h1 {
   height: 80px;
   z-index: 1000;
   cursor: pointer;
+  /* Allow right-clicks to pass through for devtools access */
+  pointer-events: auto;
 }
 
 /* Menu modal */
