@@ -19,6 +19,21 @@ fi
 
 echo "🚀 Installing Tauri dependencies for Linux..."
 
+# Determine which user should own the Rust toolchain
+TARGET_USER="${SUDO_USER}"
+if [ -z "$TARGET_USER" ]; then
+    if id -u serveradmin >/dev/null 2>&1; then
+        TARGET_USER="serveradmin"
+    else
+        TARGET_USER="root"
+    fi
+fi
+TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+if [ -z "$TARGET_HOME" ]; then
+    echo "❌ Could not determine home directory for user: $TARGET_USER"
+    exit 1
+fi
+
 # Update package list
 echo "📦 Updating package list..."
 sudo apt update
@@ -36,14 +51,21 @@ sudo apt install -y \
   libayatana-appindicator3-dev \
   librsvg2-dev
 
-# Install Rust if not already installed
-if ! command -v rustc &> /dev/null; then
-    echo "🦀 Installing Rust..."
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    source ~/.cargo/env
-    echo "ℹ️ Rust installed successfully."
+# Install Rust if not already installed for target user
+if ! sudo -u "$TARGET_USER" -H bash -lc "command -v rustc >/dev/null 2>&1"; then
+    echo "🦀 Installing Rust for user: $TARGET_USER"
+    sudo -u "$TARGET_USER" -H bash -lc \
+        "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
+    echo "ℹ️ Rust installed successfully for $TARGET_USER."
 else
-    echo "✅ Rust is already installed"
+    echo "✅ Rust is already installed for $TARGET_USER"
+fi
+
+# Ensure target user's shell loads Rust environment
+if ! sudo -u "$TARGET_USER" -H bash -lc "grep -q 'source \$HOME/.cargo/env' \"$TARGET_HOME/.bashrc\" 2>/dev/null"; then
+    echo "" | sudo -u "$TARGET_USER" -H tee -a "$TARGET_HOME/.bashrc" >/dev/null
+    echo "# Load Rust environment (installed by rustup)" | sudo -u "$TARGET_USER" -H tee -a "$TARGET_HOME/.bashrc" >/dev/null
+    echo "source \$HOME/.cargo/env" | sudo -u "$TARGET_USER" -H tee -a "$TARGET_HOME/.bashrc" >/dev/null
 fi
 
 # Install Node.js if not already installed
