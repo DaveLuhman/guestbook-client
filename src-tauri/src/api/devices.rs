@@ -1,6 +1,7 @@
 use crate::config::config_manager::ConfigManager;
 use chrono::Utc;
 use serde_json::json;
+use std::process::Command;
 use std::time::Duration;
 use tauri_plugin_http::reqwest; // Add this import for the `json!` macro
 use tokio::time;
@@ -288,5 +289,61 @@ pub async fn check_network_availability(
         // Should not happen, but handle gracefully
         log::error!("Network availability check failed with unknown error");
         Ok(false)
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn run_nmcli(args: &[&str]) -> Result<String, String> {
+    let output = Command::new("nmcli")
+        .args(args)
+        .output()
+        .map_err(|e| format!("Failed to run nmcli {}: {}", args.join(" "), e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+    if !output.status.success() {
+        let error_details = if stderr.is_empty() { stdout } else { stderr };
+        return Err(format!(
+            "nmcli {} failed with exit {}: {}",
+            args.join(" "),
+            output.status.code().unwrap_or(-1),
+            error_details
+        ));
+    }
+
+    Ok(stdout)
+}
+
+pub async fn attempt_network_recovery() -> Result<String, String> {
+    #[cfg(target_os = "linux")]
+    {
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            log::warn!("Attempting network recovery via NetworkManager (nmcli)");
+            let mut details: Vec<String> = Vec::new();
+
+            let off_output = run_nmcli(&["networking", "off"])?;
+            if !off_output.is_empty() {
+                details.push(off_output);
+            }
+
+            std::thread::sleep(Duration::from_secs(1));
+
+            let on_output = run_nmcli(&["networking", "on"])?;
+            if !on_output.is_empty() {
+                details.push(on_output);
+            }
+
+            Ok::<String, String>(details.join("\n"))
+        })
+        .await
+        .map_err(|e| format!("Network recovery task failed: {}", e))?;
+
+        return result;
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err("Network recovery is only supported on Linux".to_string())
     }
 }

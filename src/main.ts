@@ -763,9 +763,15 @@ async function startNetworkMonitoring() {
   let lastKnownAvailable: boolean | null = null;
   let isOrphaned = false;
   let lastKnownOrphaned = false;
+  let isChecking = false;
+  let monitoringActive = true;
+  let monitorTimer: number | undefined;
+  let recoveryInFlight = false;
+  let lastRecoveryAttempt: number | null = null;
   // Track consecutive failures - require 2 failures before marking network as down
   let consecutiveFailures = 0;
   const FAILURE_THRESHOLD = 2; // Require 2 consecutive failures before showing warning
+  const RECOVERY_COOLDOWN_MS = 5 * 60 * 1000;
 
   const updateNetworkUI = (isAvailable: boolean, orphaned: boolean = false) => {
     const entryData = document.getElementById('entry-data');
@@ -801,7 +807,51 @@ async function startNetworkMonitoring() {
     }
   };
 
+  const scheduleNextCheck = () => {
+    if (!monitoringActive) {
+      return;
+    }
+
+    if (monitorTimer !== undefined) {
+      window.clearTimeout(monitorTimer);
+    }
+
+    monitorTimer = window.setTimeout(() => {
+      void performCheck();
+    }, 30 * 1000);
+  };
+
+  const attemptNetworkRecovery = async (reason: string) => {
+    if (recoveryInFlight) {
+      return;
+    }
+
+    const now = Date.now();
+    if (lastRecoveryAttempt !== null && now - lastRecoveryAttempt < RECOVERY_COOLDOWN_MS) {
+      return;
+    }
+
+    recoveryInFlight = true;
+    lastRecoveryAttempt = now;
+
+    try {
+      const details = await invoke<string>('attempt_network_recovery_command');
+      console.warn('Network recovery attempt completed:', reason, details);
+    } catch (error) {
+      console.warn('Network recovery attempt failed:', reason, error);
+    } finally {
+      recoveryInFlight = false;
+    }
+  };
+
   const performCheck = async () => {
+    if (isChecking) {
+      console.warn('Network check already in flight; skipping scheduled run');
+      scheduleNextCheck();
+      return;
+    }
+
+    isChecking = true;
     try {
       const isAvailable = await invoke<boolean>(
         'check_network_availability_command'
@@ -843,6 +893,7 @@ async function startNetworkMonitoring() {
             lastKnownAvailable = false;
             lastKnownOrphaned = false;
           }
+          await attemptNetworkRecovery('availability check returned false');
         } else {
           // Not enough failures yet - don't update UI, just log
           console.log(`Network check failed but below threshold (${consecutiveFailures}/${FAILURE_THRESHOLD}) - not showing warning`);
@@ -876,6 +927,11 @@ async function startNetworkMonitoring() {
             await invoke('clear_orphaned_state_command');
             await invoke('first_run_trigger');
             // Exit monitoring - first-run screen will handle re-registration
+            monitoringActive = false;
+            if (monitorTimer !== undefined) {
+              window.clearTimeout(monitorTimer);
+              monitorTimer = undefined;
+            }
             return;
           }
         } catch (configError) {
@@ -905,19 +961,21 @@ async function startNetworkMonitoring() {
             lastKnownAvailable = false;
             lastKnownOrphaned = false;
           }
+          await attemptNetworkRecovery('availability check errored');
         } else {
           // Below threshold - log but don't show error or update UI
           console.log(`Network check error below threshold (${consecutiveFailures}/${FAILURE_THRESHOLD}) - not showing warning`);
         }
       }
     }
+    finally {
+      isChecking = false;
+      scheduleNextCheck();
+    }
   };
 
   // Initial check
   await performCheck();
-
-  // Check every 30 seconds
-  setInterval(performCheck, 30 * 1000);
 }
 
 /**

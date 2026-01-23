@@ -10,7 +10,14 @@ mod logging;
 mod debug_logging;
 #[cfg(debug_assertions)]
 mod debug_server;
-use api::devices::{register_device, send_heartbeat, reset_device, check_network_availability, clear_orphaned_state};
+use api::devices::{
+    register_device,
+    send_heartbeat,
+    reset_device,
+    check_network_availability,
+    clear_orphaned_state,
+    attempt_network_recovery,
+};
 use config::config_manager::{get_full_config, set_camera_preview_enabled, ConfigManager};
 use devices::barcode::{listen_to_barcode, open_symbol_scanner};
 use devices::magtek::{listen_to_magtek, open_magtek_reader};
@@ -358,6 +365,12 @@ async fn check_network_availability_command(
     config_manager: tauri::State<'_, ConfigManager>,
 ) -> Result<bool, String> {
     check_network_availability(config_manager).await
+}
+
+/// IPC command to attempt a best-effort network recovery (Linux only).
+#[tauri::command]
+async fn attempt_network_recovery_command() -> Result<String, String> {
+    attempt_network_recovery().await
 }
 
 #[tauri::command]
@@ -898,6 +911,7 @@ fn main() {
             submit_first_run_config,
             send_heartbeat_command,
             check_network_availability_command,
+            attempt_network_recovery_command,
             log_error,
             test_logging,
             restart_appliance,
