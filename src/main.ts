@@ -641,20 +641,22 @@ function initializeCameraPreviewToggle(config: config) {
   if (!toggleBtn) return;
 
   // Set initial state
-  updateCameraPreviewToggle(config.camera_preview_enabled);
+  let currentEnabled = config.camera_preview_enabled;
+  updateCameraPreviewToggle(currentEnabled);
 
   // Add click handler
   toggleBtn.addEventListener('click', async () => {
     try {
-      const newValue = !config.camera_preview_enabled;
+      const newValue = !currentEnabled;
       await invoke('set_camera_preview_enabled', { enabled: newValue });
 
       // Reload config to get updated value
       const updatedConfig: config = await invoke('get_full_config');
-      updateCameraPreviewToggle(updatedConfig.camera_preview_enabled);
+      currentEnabled = updatedConfig.camera_preview_enabled;
+      updateCameraPreviewToggle(currentEnabled);
 
       // Update camera video display based on new setting
-      updateCameraVideoDisplay(updatedConfig.camera_preview_enabled);
+      updateCameraVideoDisplay(currentEnabled);
 
       soundManager.playBeep(700, 120);
     } catch (error) {
