@@ -65,4 +65,4 @@ jobs:
         with:
           name: guestbook-arm64
           path: |
-            src-tauri/target/release/bundle/appimage/*arm64*.AppImage
+            src-tauri/target/release/bundle/appimage/*aarch64*.AppImage
