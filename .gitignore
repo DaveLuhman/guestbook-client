@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Compiled firstRun.js (built from src/firstRun.ts)
+public/firstRun.js
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

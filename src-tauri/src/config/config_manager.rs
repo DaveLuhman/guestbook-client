@@ -1,9 +1,9 @@
 use crate::config::device_id::compute_device_id;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use tauri::State;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -14,17 +14,20 @@ pub struct Config {
     pub device_location: Option<String>,
     pub device_friendly_name: Option<String>,
     pub first_run: bool,
+    #[serde(default)]
+    pub camera_preview_enabled: bool,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
-            server_url: Some("https://guestbook-api.ep.ado.software/api/v1".to_string()),
+            server_url: None,
             server_token: None,
             device_id: Some(compute_device_id()),
             device_location: None,
             device_friendly_name: None,
             first_run: true,
+            camera_preview_enabled: false,
         }
     }
 }
@@ -37,38 +40,88 @@ pub struct ConfigManager {
 impl ConfigManager {
     pub fn new() -> Self {
         let config_path = Self::resolve_config_path();
+
+        // Ensure config directory exists
         if let Some(parent) = config_path.parent() {
             if !parent.exists() {
-                let _ = fs::create_dir_all(parent);
+                if let Err(e) = fs::create_dir_all(parent) {
+                    log::warn!("Failed to create config directory {}: {}", parent.display(), e);
+                    eprintln!("Warning: Failed to create config directory {}: {}", parent.display(), e);
+                }
             }
         }
-        let config = Self::load_config(&config_path);
-        let merged_config = Self::merge_with_default(config);
+
+        // Load existing config
+        let loaded_config = Self::load_config(&config_path);
+        let config_exists = config_path.exists();
+        let config_loaded_successfully = loaded_config.is_some();
+
+        // Merge with defaults
+        let merged_config = Self::merge_with_default(loaded_config);
+
         let manager = Self {
             config_path,
             config: Arc::new(Mutex::new(merged_config)),
         };
-        manager.save_config().ok();
+
+        // Only save if this is a new config file, or if we successfully loaded an existing one
+        // This prevents overwriting existing configs when parsing fails
+        if !config_exists {
+            // New config file - save defaults
+            if let Err(e) = manager.save_config() {
+                log::error!("Failed to save initial config: {}", e);
+                eprintln!("Error: Failed to save initial config: {}", e);
+            }
+        } else if config_loaded_successfully {
+            // Successfully loaded existing config - save merged version to ensure new fields are added
+            if let Err(e) = manager.save_config() {
+                log::error!("Failed to save merged config: {}", e);
+                eprintln!("Error: Failed to save merged config: {}", e);
+            }
+        } else {
+            // Config file exists but parsing failed - don't overwrite it!
+            log::error!("Config file exists at {} but failed to parse. Not overwriting to prevent data loss.", manager.config_path.display());
+            eprintln!("Error: Config file exists but is corrupted. Not overwriting to prevent data loss.");
+        }
+
         manager
     }
 
     fn resolve_config_path() -> PathBuf {
         // Try to use a platform-specific user data directory, fallback to home
-        if let Some(proj_dirs) = directories::ProjectDirs::from("com", "wolfpack", "guestbook") {
-            proj_dirs.config_dir().join("wg_config.json")
+        if let Some(proj_dirs) = directories::ProjectDirs::from("com", "adosoftware", "guestbook") {
+            proj_dirs.config_dir().join("gb_config.json")
         } else if let Some(home) = dirs::home_dir() {
-            home.join(".wolfpack-guestbook").join("wg_config.json")
+            home.join(".adosoftware-guestbook").join("gb_config.json")
         } else {
-            PathBuf::from("wg_config.json")
+            PathBuf::from("gb_config.json")
         }
     }
 
     fn load_config(path: &Path) -> Option<Config> {
-        if path.exists() {
-            let data = fs::read_to_string(path).ok()?;
-            serde_json::from_str(&data).ok()
-        } else {
-            None
+        if !path.exists() {
+            return None;
+        }
+
+        // Read file with error logging
+        let data = match fs::read_to_string(path) {
+            Ok(data) => data,
+            Err(e) => {
+                log::warn!("Failed to read config file {}: {}", path.display(), e);
+                eprintln!("Warning: Failed to read config file {}: {}", path.display(), e);
+                return None;
+            }
+        };
+
+        // Parse JSON with error logging
+        match serde_json::from_str(&data) {
+            Ok(config) => Some(config),
+            Err(e) => {
+                log::error!("Failed to parse config file {}: {}", path.display(), e);
+                eprintln!("Error: Failed to parse config file {}: {}", path.display(), e);
+                eprintln!("Config file may be corrupted or have an incompatible schema.");
+                None
+            }
         }
     }
 
@@ -92,41 +145,130 @@ impl ConfigManager {
                 default.device_friendly_name = Some(device_friendly_name);
             }
             default.first_run = cfg.first_run;
+            default.camera_preview_enabled = cfg.camera_preview_enabled;
         }
         default
     }
 
     pub fn save_config(&self) -> io::Result<()> {
-        let config = self.config.lock().unwrap();
+        // Handle mutex poisoning gracefully
+        let config = self.config.lock()
+            .map_err(|e: PoisonError<_>| {
+                let msg = format!("Mutex poisoned: {}", e);
+                log::error!("{}", msg);
+                io::Error::other(msg)
+            })?;
+
+        // Ensure parent directory exists
         if let Some(parent) = self.config_path.parent() {
             if !parent.exists() {
-                fs::create_dir_all(parent)?;
+                fs::create_dir_all(parent)
+                    .map_err(|e| {
+                        log::error!("Failed to create config directory {}: {}", parent.display(), e);
+                        e
+                    })?;
             }
         }
-        let data = serde_json::to_string_pretty(&*config)?;
-        let mut file = fs::File::create(&self.config_path)?;
-        file.write_all(data.as_bytes())?;
-        // Event emission stub: config changed
+
+        // Serialize config
+        let data = serde_json::to_string_pretty(&*config)
+            .map_err(|e| {
+                log::error!("Failed to serialize config: {}", e);
+                io::Error::new(io::ErrorKind::InvalidData, format!("Serialization error: {}", e))
+            })?;
+
+        // Atomic write: write to temp file first, then rename
+        let temp_path = self.config_path.with_extension("tmp");
+
+        // Write to temp file
+        fs::write(&temp_path, data.as_bytes())
+            .map_err(|e| {
+                log::error!("Failed to write temp config file {}: {}", temp_path.display(), e);
+                e
+            })?;
+
+        // Atomic rename (atomic on Linux/Unix, best-effort on Windows)
+        fs::rename(&temp_path, &self.config_path)
+            .map_err(|e| {
+                log::error!("Failed to rename temp config file to {}: {}", self.config_path.display(), e);
+                // Try to clean up temp file
+                let _ = fs::remove_file(&temp_path);
+                e
+            })?;
+
+        log::debug!("Config saved successfully to {}", self.config_path.display());
         Ok(())
     }
 
     pub fn set<T, F: Fn(&mut Config, T)>(&self, value: T, f: F) {
         {
-            let mut config = self.config.lock().unwrap();
-            f(&mut *config, value);
+            let mut config = self.config.lock()
+                .map_err(|e: PoisonError<_>| {
+                    log::error!("Mutex poisoned while setting config: {}", e);
+                    eprintln!("Error: Config mutex is poisoned. Application state may be corrupted.");
+                })
+                .ok();
+
+            if let Some(ref mut cfg) = config {
+                f(cfg, value);
+            } else {
+                return; // Don't save if we couldn't acquire the lock
+            }
         }
-        let _ = self.save_config();
+
+        if let Err(e) = self.save_config() {
+            log::error!("Failed to save config after set operation: {}", e);
+            eprintln!("Error: Failed to save config: {}", e);
+        }
     }
 
     pub fn set_server_token(&self, server_token: String) {
         self.set(server_token, |c, v| c.server_token = Some(v));
+    }
+
+    #[allow(dead_code)]
+    pub fn set_server_url(&self, server_url: String) {
+        self.set(server_url, |c, v| c.server_url = Some(v));
+    }
+
+    pub fn set_first_run(&self, first_run: bool) {
+        self.set(first_run, |c, v| c.first_run = v);
+    }
+
+    pub fn set_camera_preview_enabled(&self, enabled: bool) {
+        self.set(enabled, |c, v| c.camera_preview_enabled = v);
+    }
+
+    /// Get a copy of the current config (for direct access from Rust code)
+    pub fn get_config(&self) -> Result<Config, String> {
+        self.config.lock()
+            .map_err(|e: PoisonError<_>| {
+                let msg = format!("Config mutex poisoned: {}", e);
+                log::error!("{}", msg);
+                msg
+            })
+            .map(|config| config.clone())
     }
 }
 
 // Optionally, you can provide a global singleton instance using lazy_static or once_cell
 
 #[tauri::command]
-pub fn get_full_config(config_manager: State<'_, ConfigManager>) -> Config {
-    let config = config_manager.config.lock().unwrap().clone();
-    config
+pub fn get_full_config(config_manager: State<'_, ConfigManager>) -> Result<Config, String> {
+    config_manager.config.lock()
+        .map_err(|e: PoisonError<_>| {
+            let msg = format!("Config mutex poisoned: {}", e);
+            log::error!("{}", msg);
+            msg
+        })
+        .map(|config| config.clone())
+}
+
+#[tauri::command]
+pub fn set_camera_preview_enabled(
+    enabled: bool,
+    config_manager: State<'_, ConfigManager>,
+) -> Result<(), String> {
+    config_manager.set_camera_preview_enabled(enabled);
+    Ok(())
 }

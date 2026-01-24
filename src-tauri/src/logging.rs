@@ -5,6 +5,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+#[allow(dead_code)]
 pub struct FileLogger {
     log_dir: PathBuf,
     current_file: Arc<Mutex<Option<File>>>,
@@ -91,10 +92,11 @@ impl Log for FileLogger {
     }
 }
 
+#[allow(dead_code)]
 pub fn init_logging(config_dir: &Path) -> io::Result<()> {
     let file_logger = FileLogger::new(config_dir)?;
     log::set_boxed_logger(Box::new(file_logger))
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        .map_err(io::Error::other)?;
     log::set_max_level(LevelFilter::Debug);
     Ok(())
 }

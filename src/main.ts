@@ -1,7 +1,12 @@
+/** biome-ignore-all lint/suspicious/noExplicitAny: it's a display transformation, typing doesn't matter */
 import { invoke } from '@tauri-apps/api/core';
 import { errorHandler } from './error/errorHandler';
 import { startHIDManager } from './hid/HIDManager';
 import { soundManager } from './sound/soundManager';
+import { initDebugLogger } from './debugLogger';
+
+// Initialize debug logging (only works in debug builds)
+initDebugLogger();
 
 interface config {
   server_url: string;
@@ -10,6 +15,7 @@ interface config {
   device_location: string;
   device_friendly_name: string;
   first_run: boolean;
+  camera_preview_enabled: boolean;
 }
 
 // Menu state management
@@ -27,6 +33,7 @@ function initializeMenu() {
   const menuModal = document.getElementById('menu-modal');
   const manualEntryBtn = document.getElementById('manual-entry-btn');
   const showConfigBtn = document.getElementById('show-config-btn');
+  const resetDeviceBtn = document.getElementById('reset-device-btn');
   const restartApplianceBtn = document.getElementById('restart-appliance-btn');
 
   if (!menuTrigger || !menuModal) return;
@@ -126,21 +133,12 @@ function initializeMenu() {
     }
   });
 
-  // Add test logging button
-  const testLoggingBtn = document.getElementById('test-logging-btn');
-  testLoggingBtn?.addEventListener('click', async () => {
-    console.log('Test Logging clicked');
+  // Reset device button handler
+  resetDeviceBtn?.addEventListener('click', () => {
+    console.log('Reset Device clicked');
     soundManager.playBeep(700, 120);
-    try {
-      await invoke('test_logging');
-      console.log('Test logging completed');
-    } catch (error) {
-      console.error('Test logging failed:', error);
-      const errorMsg =
-        error instanceof Error ? error.message : 'Test logging failed';
-      errorHandler.handleApplicationError('system', errorMsg, 'medium');
-    }
     closeMenu();
+    openResetConfirmation();
   });
 }
 
@@ -246,6 +244,24 @@ function initializeManualEntry() {
           error instanceof Error
             ? error.message
             : 'Manual entry submission failed';
+
+        // Check if device is orphaned
+        if (errorMsg.includes('Device Orphaned') || errorMsg.includes('orphaned')) {
+          errorHandler.handleApplicationError('keypad', errorMsg, 'high');
+          // Try to automatically recover by clearing orphaned state and triggering re-registration
+          try {
+            const config: config = await invoke('get_full_config');
+            if (!config.first_run) {
+              console.log('Device orphaned during entry - clearing state and triggering re-registration');
+              await invoke('clear_orphaned_state_command');
+              await invoke('first_run_trigger');
+              return; // Exit - first-run screen will handle re-registration
+            }
+          } catch (recoveryError) {
+            console.error('Failed to recover from orphaned state:', recoveryError);
+          }
+        }
+
         errorHandler.handleApplicationError('keypad', errorMsg, 'high');
         showEntryError();
       }
@@ -372,9 +388,45 @@ async function openConfig() {
     });
 
     try {
+      // Load app version
+      try {
+        const version = await invoke<string>('get_app_version');
+        const versionElement = document.getElementById('config-app-version');
+        if (versionElement) {
+          versionElement.textContent = version;
+        }
+      } catch (error) {
+        console.error('Failed to load app version:', error);
+        const versionElement = document.getElementById('config-app-version');
+        if (versionElement) {
+          versionElement.textContent = 'Error loading';
+        }
+      }
+
+      // Set runtime environment (dev or release)
+      const runtimeEnvElement = document.getElementById('config-runtime-env');
+      if (runtimeEnvElement) {
+        // In Vite, import.meta.env.DEV is true in dev mode, false in production
+        // import.meta.env.MODE is 'development' or 'production'
+        // Check for dev mode using Vite's environment variables
+        let isDev = false;
+        try {
+          // Access Vite's env through type assertion
+          const env = (import.meta as { env?: { DEV?: boolean; MODE?: string } }).env;
+          isDev = env?.DEV === true || env?.MODE === 'development';
+        } catch {
+          // Fallback: assume production if env is not available
+          isDev = false;
+        }
+        runtimeEnvElement.textContent = isDev ? 'Development' : 'Release';
+      }
+
       // Load configuration data
       const config: config = await invoke('get_full_config');
       updateConfigDisplay(config);
+
+      // Initialize camera preview toggle
+      initializeCameraPreviewToggle(config);
     } catch (error) {
       console.error('Failed to load config:', error);
       const errorMsg =
@@ -399,6 +451,132 @@ function closeConfig() {
   if (configModal && isConfigOpen) {
     isConfigOpen = false;
     configModal.classList.remove('active');
+  }
+}
+
+// Reset device confirmation modal functions
+let isResetConfirmationOpen = false;
+let resetModalListeners: { element: HTMLElement; event: string; handler: EventListener | ((e: KeyboardEvent) => void) }[] = [];
+
+function openResetConfirmation() {
+  const resetModal = document.getElementById('reset-confirmation-modal');
+  if (resetModal && !isResetConfirmationOpen) {
+    isResetConfirmationOpen = true;
+    resetModal.classList.add('active');
+
+    // Focus management for accessibility
+    resetModal.focus();
+
+    // Set up event listeners for the confirmation modal
+    const closeBtn = document.getElementById('close-reset-confirmation-btn');
+    const cancelBtn = document.getElementById('cancel-reset-btn');
+    const confirmBtn = document.getElementById('confirm-reset-btn');
+
+    // Close button handler
+    if (closeBtn) {
+      const handler = () => closeResetConfirmation();
+      closeBtn.addEventListener('click', handler);
+      resetModalListeners.push({ element: closeBtn, event: 'click', handler });
+    }
+
+    // Cancel button handler
+    if (cancelBtn) {
+      const handler = () => closeResetConfirmation();
+      cancelBtn.addEventListener('click', handler);
+      resetModalListeners.push({ element: cancelBtn, event: 'click', handler });
+    }
+
+    // Confirm button handler
+    if (confirmBtn) {
+      const handler = async () => {
+        await handleDeviceReset();
+      };
+      confirmBtn.addEventListener('click', handler);
+      resetModalListeners.push({ element: confirmBtn, event: 'click', handler });
+    }
+
+    // Close on outside click
+    const outsideClickHandler = (e: Event) => {
+      if (e.target === resetModal) {
+        closeResetConfirmation();
+      }
+    };
+    resetModal.addEventListener('click', outsideClickHandler);
+    resetModalListeners.push({ element: resetModal, event: 'click', handler: outsideClickHandler });
+
+    // Close on Escape key
+    const escapeHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closeResetConfirmation();
+      }
+    };
+    resetModal.addEventListener('keydown', escapeHandler);
+    resetModalListeners.push({ element: resetModal, event: 'keydown', handler: escapeHandler });
+  }
+}
+
+function closeResetConfirmation() {
+  const resetModal = document.getElementById('reset-confirmation-modal');
+  if (resetModal && isResetConfirmationOpen) {
+    // Remove all event listeners
+    resetModalListeners.forEach(({ element, event, handler }) => {
+      element.removeEventListener(event, handler as EventListener);
+    });
+    resetModalListeners = [];
+
+    isResetConfirmationOpen = false;
+    resetModal.classList.remove('active');
+  }
+}
+
+async function handleDeviceReset() {
+  const confirmBtn = document.getElementById('confirm-reset-btn');
+  if (!confirmBtn) return;
+
+  // Store original text for potential error recovery
+  const originalText = confirmBtn.textContent;
+
+  try {
+    // Show user feedback that reset is in progress
+    confirmBtn.textContent = 'Resetting...';
+    (confirmBtn as HTMLButtonElement).disabled = true;
+
+    // Call the Tauri reset device function
+    await invoke('reset_device_command');
+    console.log('Device reset completed successfully');
+
+    // Show success feedback
+    confirmBtn.style.backgroundColor = '#00aa00';
+    confirmBtn.textContent = 'Reset Complete';
+
+    // Close the confirmation modal after a brief delay
+    setTimeout(() => {
+      closeResetConfirmation();
+    }, 2000);
+
+  } catch (error) {
+    console.error('Device reset failed:', error);
+    const errorMsg = error instanceof Error ? error.message : 'Device reset failed';
+
+    // Note: Reset should succeed even for orphaned devices (backend handles 403 gracefully)
+    // But if there's an error, log it but still show success since local config is cleared
+    if (errorMsg.includes('403') || errorMsg.includes('orphaned')) {
+      // Device was orphaned - reset still succeeded locally
+      console.log('Device was orphaned, but local reset completed successfully');
+      confirmBtn.style.backgroundColor = '#00aa00';
+      confirmBtn.textContent = 'Reset Complete';
+      setTimeout(() => {
+        closeResetConfirmation();
+      }, 2000);
+      return;
+    }
+
+    errorHandler.handleApplicationError('system', errorMsg, 'medium');
+
+    // Reset button state on error
+    confirmBtn.textContent = originalText;
+    (confirmBtn as HTMLButtonElement).disabled = false;
+    confirmBtn.style.backgroundColor = '';
   }
 }
 
@@ -436,6 +614,10 @@ const configFieldMap: Record<keyof config, {
     id: 'config-first-run',
     transform: (v: boolean) => v ? 'Yes' : 'No'
   },
+  camera_preview_enabled: {
+    id: 'config-camera-preview-enabled',
+    transform: (v: boolean) => v ? 'Yes' : 'No'
+  },
 };
 
 function updateConfigDisplay(config: config) {
@@ -449,36 +631,108 @@ function updateConfigDisplay(config: config) {
     const rawValue = (config as any)[key];
     element.textContent = transform ? transform(rawValue) : String(rawValue);
   });
+
+  // Update camera preview toggle separately
+  updateCameraPreviewToggle(config.camera_preview_enabled);
 }
 
-function showEntrySuccess() {
+function initializeCameraPreviewToggle(config: config) {
+  const toggleBtn = document.getElementById('camera-preview-toggle');
+  if (!toggleBtn) return;
+
+  // Set initial state
+  let currentEnabled = config.camera_preview_enabled;
+  updateCameraPreviewToggle(currentEnabled);
+
+  // Add click handler
+  toggleBtn.addEventListener('click', async () => {
+    try {
+      const newValue = !currentEnabled;
+      await invoke('set_camera_preview_enabled', { enabled: newValue });
+
+      // Reload config to get updated value
+      const updatedConfig: config = await invoke('get_full_config');
+      currentEnabled = updatedConfig.camera_preview_enabled;
+      updateCameraPreviewToggle(currentEnabled);
+
+      // Update camera video display based on new setting
+      updateCameraVideoDisplay(currentEnabled);
+
+      soundManager.playBeep(700, 120);
+    } catch (error) {
+      console.error('Failed to toggle camera preview:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Failed to toggle camera preview';
+      errorHandler.handleApplicationError('config', errorMsg, 'medium');
+    }
+  });
+}
+
+function updateCameraPreviewToggle(enabled: boolean) {
+  const toggleBtn = document.getElementById('camera-preview-toggle');
+  const toggleText = document.getElementById('camera-preview-toggle-text');
+
+  if (toggleBtn && toggleText) {
+    if (enabled) {
+      toggleBtn.classList.add('enabled');
+      toggleText.textContent = 'Enabled';
+    } else {
+      toggleBtn.classList.remove('enabled');
+      toggleText.textContent = 'Disabled';
+    }
+  }
+}
+
+// Track if entry feedback is currently showing to prevent premature resets
+let isEntryFeedbackShowing = false;
+
+// Shared reset function for consistent messaging
+function resetEntryDisplay() {
+  const entryData = document.getElementById('entry-data');
+  if (entryData) {
+    // Only reset to default if network is available
+    // If network is unavailable, keep the warning message
+    const isNetworkUnavailable = document.body.classList.contains('network-unavailable-state');
+
+    if (!isNetworkUnavailable) {
+      entryData.innerHTML =
+        '<p>Swipe your card or scan your barcode to record an entry...</p>';
+    } else {
+      // Network is down, restore the warning message
+      entryData.innerHTML =
+        '<p>The network is unavailable and entries cannot be recorded at this time.</p>';
+    }
+  }
+  // Remove success/error state classes, but preserve network-unavailable-state
+  document.body.classList.remove('success-state', 'error-state');
+  isEntryFeedbackShowing = false;
+}
+
+export function showEntrySuccess() {
   // Update the main display to show success
   const entryData = document.getElementById('entry-data');
   if (entryData) {
     entryData.innerHTML = '<p>Entry submitted successfully!</p>';
     // Change screen color to green for success using CSS class
     document.body.classList.add('success-state');
+    isEntryFeedbackShowing = true;
     // Reset after 3 seconds
     setTimeout(() => {
-      entryData.innerHTML =
-        '<p>Swipe your card or scan your barcode to record an entry...</p>';
-      document.body.classList.remove('success-state');
+      resetEntryDisplay();
     }, 3000);
   }
 }
 
-function showEntryError() {
+export function showEntryError() {
   // Update the main display to show error
   const entryData = document.getElementById('entry-data');
   if (entryData) {
     entryData.innerHTML = '<p>Error submitting entry. Please try again.</p>';
     // Change screen color to red for error using CSS class
     document.body.classList.add('error-state');
+    isEntryFeedbackShowing = true;
     // Reset after 3 seconds
     setTimeout(() => {
-      entryData.innerHTML =
-        '<p>Swipe your card or scan your barcode to record an entry...</p>';
-      document.body.classList.remove('error-state');
+      resetEntryDisplay();
     }, 3000);
   }
 }
@@ -502,9 +756,315 @@ async function scheduleHeartbeat() {
   }, interval);
 }
 
+/**
+ * Background network monitoring to detect API availability issues.
+ * When the network is unavailable, the background turns yellow and
+ * a warning message is displayed to the user.
+ */
+async function startNetworkMonitoring() {
+  let lastKnownAvailable: boolean | null = null;
+  let isOrphaned = false;
+  let lastKnownOrphaned = false;
+  let isChecking = false;
+  let monitoringActive = true;
+  let monitorTimer: number | undefined;
+  let recoveryInFlight = false;
+  let lastRecoveryAttempt: number | null = null;
+  // Track consecutive failures - require 2 failures before marking network as down
+  let consecutiveFailures = 0;
+  const FAILURE_THRESHOLD = 2; // Require 2 consecutive failures before showing warning
+  const RECOVERY_COOLDOWN_MS = 5 * 60 * 1000;
+
+  const updateNetworkUI = (isAvailable: boolean, orphaned: boolean = false) => {
+    const entryData = document.getElementById('entry-data');
+
+    if (orphaned) {
+      // Device is orphaned - show appropriate message
+      document.body.classList.add('network-unavailable-state');
+      if (entryData && !isEntryFeedbackShowing) {
+        entryData.innerHTML =
+          '<p>This device has been removed from the server. Please reset and re-register.</p>';
+      }
+    } else if (isAvailable) {
+      // Clear network warning state
+      document.body.classList.remove('network-unavailable-state');
+
+      // Only reset to default text if:
+      // 1. We were previously in a network error state, AND
+      // 2. Entry feedback is not currently showing (to avoid erasing active feedback)
+      if (lastKnownAvailable === false && entryData && !isEntryFeedbackShowing) {
+        entryData.innerHTML =
+          '<p>Swipe your card or scan your barcode to record an entry...</p>';
+      }
+    } else {
+      // Apply network warning state
+      document.body.classList.add('network-unavailable-state');
+
+      // Only update message if entry feedback is not currently showing
+      // (to avoid erasing active success/error feedback)
+      if (entryData && !isEntryFeedbackShowing) {
+        entryData.innerHTML =
+          '<p>The network is unavailable and entries cannot be recorded at this time.</p>';
+      }
+    }
+  };
+
+  const scheduleNextCheck = () => {
+    if (!monitoringActive) {
+      return;
+    }
+
+    if (monitorTimer !== undefined) {
+      window.clearTimeout(monitorTimer);
+    }
+
+    monitorTimer = window.setTimeout(() => {
+      void performCheck();
+    }, 30 * 1000);
+  };
+
+  const attemptNetworkRecovery = async (reason: string) => {
+    if (recoveryInFlight) {
+      return;
+    }
+
+    const now = Date.now();
+    if (lastRecoveryAttempt !== null && now - lastRecoveryAttempt < RECOVERY_COOLDOWN_MS) {
+      return;
+    }
+
+    recoveryInFlight = true;
+    lastRecoveryAttempt = now;
+
+    try {
+      const details = await invoke<string>('attempt_network_recovery_command');
+      console.warn('Network recovery attempt completed:', reason, details);
+    } catch (error) {
+      console.warn('Network recovery attempt failed:', reason, error);
+    } finally {
+      recoveryInFlight = false;
+    }
+  };
+
+  const performCheck = async () => {
+    if (isChecking) {
+      console.warn('Network check already in flight; skipping scheduled run');
+      scheduleNextCheck();
+      return;
+    }
+
+    isChecking = true;
+    try {
+      const isAvailable = await invoke<boolean>(
+        'check_network_availability_command'
+      );
+
+      // Success - reset failure counter and update UI immediately
+      if (isAvailable) {
+        const hadFailures = consecutiveFailures > 0;
+        consecutiveFailures = 0; // Reset on success
+
+        // Device is valid and network is available
+        if (isOrphaned) {
+          // Device was orphaned but now appears valid - clear orphaned state
+          console.log('Device status changed from orphaned to valid');
+          isOrphaned = false;
+          // Force UI update to clear orphaned warning
+          lastKnownOrphaned = true;
+          lastKnownAvailable = null; // Reset to force UI refresh
+        }
+
+        // Update UI immediately on success (especially if we had failures before)
+        if (isAvailable !== lastKnownAvailable || isOrphaned !== lastKnownOrphaned || hadFailures) {
+          updateNetworkUI(isAvailable, false);
+          lastKnownAvailable = isAvailable;
+          lastKnownOrphaned = false;
+          if (hadFailures) {
+            console.log('Network recovered - clearing warning after successful check');
+          }
+        }
+      } else {
+        // Check returned false - increment failure counter
+        consecutiveFailures++;
+        console.warn(`Network check failed (${consecutiveFailures}/${FAILURE_THRESHOLD} consecutive failures)`);
+
+        // Only mark as unavailable if we've exceeded the threshold
+        if (consecutiveFailures >= FAILURE_THRESHOLD) {
+          if (lastKnownAvailable !== false || isOrphaned !== lastKnownOrphaned) {
+            updateNetworkUI(false, false);
+            lastKnownAvailable = false;
+            lastKnownOrphaned = false;
+          }
+          await attemptNetworkRecovery('availability check returned false');
+        } else {
+          // Not enough failures yet - don't update UI, just log
+          console.log(`Network check failed but below threshold (${consecutiveFailures}/${FAILURE_THRESHOLD}) - not showing warning`);
+        }
+      }
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : String(e);
+
+      // Check if device is orphaned (403 response)
+      if (errorMsg === 'ORPHANED') {
+        // Orphaned state - always show immediately (don't use failure threshold)
+        console.warn('Device detected as orphaned during network check');
+        consecutiveFailures = 0; // Reset failure counter
+        const wasOrphaned = isOrphaned;
+        isOrphaned = true;
+
+        // Update UI if orphaned state changed
+        if (!wasOrphaned || lastKnownOrphaned !== isOrphaned) {
+          updateNetworkUI(false, true);
+          lastKnownOrphaned = true;
+          // Reset lastKnownAvailable to force UI refresh when orphaned state clears
+          lastKnownAvailable = null;
+        }
+
+        // Check if we should automatically trigger re-registration
+        try {
+          const config: config = await invoke('get_full_config');
+          if (!config.first_run) {
+            // Device is configured but orphaned - clear state and trigger re-registration
+            console.log('Clearing orphaned state and triggering re-registration');
+            await invoke('clear_orphaned_state_command');
+            await invoke('first_run_trigger');
+            // Exit monitoring - first-run screen will handle re-registration
+            monitoringActive = false;
+            if (monitorTimer !== undefined) {
+              window.clearTimeout(monitorTimer);
+              monitorTimer = undefined;
+            }
+            return;
+          }
+        } catch (configError) {
+          console.error('Failed to check config for orphaned recovery:', configError);
+        }
+
+        errorHandler.handleApplicationError('network', 'Device Orphaned - This device has been removed from the server', 'high');
+      } else {
+        // Other network errors - increment failure counter
+        consecutiveFailures++;
+        console.warn(`Network availability check error (${consecutiveFailures}/${FAILURE_THRESHOLD} consecutive failures):`, errorMsg);
+
+        // Clear orphaned state if it was set
+        if (isOrphaned) {
+          isOrphaned = false;
+          lastKnownOrphaned = true; // Mark as changed to trigger UI update
+          lastKnownAvailable = null; // Reset to force UI refresh
+        }
+
+        // Only show error and update UI if we've exceeded the threshold
+        if (consecutiveFailures >= FAILURE_THRESHOLD) {
+          errorHandler.handleApplicationError('network', errorMsg, 'medium');
+
+          // Update UI if state changed
+          if (lastKnownAvailable !== false || lastKnownOrphaned) {
+            updateNetworkUI(false, false);
+            lastKnownAvailable = false;
+            lastKnownOrphaned = false;
+          }
+          await attemptNetworkRecovery('availability check errored');
+        } else {
+          // Below threshold - log but don't show error or update UI
+          console.log(`Network check error below threshold (${consecutiveFailures}/${FAILURE_THRESHOLD}) - not showing warning`);
+        }
+      }
+    }
+    finally {
+      isChecking = false;
+      scheduleNextCheck();
+    }
+  };
+
+  // Initial check
+  await performCheck();
+}
+
+/**
+ * Initialize camera video display based on config setting
+ */
+async function initializeCameraVideo() {
+  try {
+    const config: config = await invoke('get_full_config');
+    updateCameraVideoDisplay(config.camera_preview_enabled);
+  } catch (error) {
+    console.error('Failed to load config for camera video:', error);
+    // Default to hidden if config can't be loaded
+    updateCameraVideoDisplay(false);
+  }
+}
+
+/**
+ * Update camera video display based on enabled setting
+ */
+function updateCameraVideoDisplay(enabled: boolean) {
+  const videoContainer = document.getElementById('camera-video-container');
+  const videoStream = document.getElementById('camera-video-stream') as HTMLImageElement;
+
+  if (!videoContainer || !videoStream) {
+    return;
+  }
+
+  if (!enabled) {
+    // Hide the container
+    videoContainer.style.display = 'none';
+    return;
+  }
+
+  // Set up MJPEG stream URL
+  const streamUrl = 'http://127.0.0.1:7313/video';
+  videoStream.src = streamUrl;
+
+  // Show the container
+  videoContainer.style.display = 'block';
+
+  // Add some basic styling for the video
+  videoContainer.style.cssText += `
+    margin-top: -50px;
+    text-align: center;
+    max-width: 100%;
+    overflow: visible;
+  `;
+  videoStream.style.cssText += `
+    max-width: 100%;
+    max-height: 300px;
+    border: 2px solid #0066cc;
+    border-radius: 8px;
+    transform: rotate(-90deg);
+    transform-origin: center center;
+  `;
+
+  // Handle stream errors gracefully
+  videoStream.onerror = () => {
+    console.warn('[CameraVideo] Failed to load video stream - sidecar may not be running');
+    videoContainer.style.display = 'none';
+  };
+
+  console.log('[CameraVideo] Video stream initialized');
+}
+
 (async () => {
   const config: config = await invoke('get_full_config');
   console.log(config);
+
+  // Check for orphaned device state on boot if device is already configured
+  if (!config.first_run) {
+    try {
+      await invoke<boolean>('check_network_availability_command');
+      // If check succeeds, device is valid - continue with normal startup
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      // Check if device is orphaned (403 response)
+      if (errorMsg === 'ORPHANED') {
+        console.warn('Device appears to be orphaned - clearing state and triggering re-registration');
+        await invoke('clear_orphaned_state_command');
+        await invoke('first_run_trigger');
+        // Exit early - first-run screen will handle re-registration
+        return;
+      }
+    }
+  }
+
   if (config.first_run) {
     await invoke('first_run_trigger');
   }
@@ -514,6 +1074,12 @@ async function scheduleHeartbeat() {
   initializeMenu();
   initializeManualEntry(); // Initialize manual entry functionality
   initializeConfig(); // Initialize config modal functionality
+
+  // Initialize camera video display (based on config setting)
+  await initializeCameraVideo();
+
+  // Start background network monitoring
+  await startNetworkMonitoring();
 
   // Heartbeat cron task: every 10 +/- 5 minutes
   scheduleHeartbeat();
