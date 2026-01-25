@@ -1,0 +1,182 @@
+---
+description: 
+alwaysApply: true
+---
+
+---
+alwaysApply: true
+---
+
+This document outlines a comprehensive set of best practices for Rust development, covering various aspects from code organization to security and tooling. Adhering to these guidelines will help you write idiomatic, efficient, secure, and maintainable Rust code.
+
+## Tauri note (Rust inside `src-tauri/`)
+If this Rust codebase is part of a **Tauri** app:
+- The Rust crate typically lives under `src-tauri/` and is the native “capability boundary”.
+- Keep Tauri-specific glue (command handlers, plugin wiring, window/event code) *separate* from your core domain logic so you can test it without spinning up the app.
+
+Recommended layout inside `src-tauri/src/`:
+- `commands/` – Tauri command functions (thin wrappers)
+- `services/` – domain logic (no `tauri::*` imports)
+- `state.rs` – managed state types (`tauri::State`), kept minimal
+- `errors.rs` – error enums + mapping to a stable wire format for the frontend
+
+Rule of thumb: **commands validate inputs + call services**. Services do the real work.
+
+## 1. Code Organization and Structure
+
+### 1.1. Directory Structure
+
+-   **`src/`**: Contains all the Rust source code.
+    -   **`main.rs`**: The entry point for binary crates.
+    -   **`lib.rs`**: The entry point for library crates.
+-   **`tests/`**: Contains integration tests.
+-   **`benches/`**: Contains benchmarks.
+-   **`examples/`**: Contains example code.
+
+### 1.2. Module Organization
+
+-   **Keep modules small and focused**: Each module should have a single responsibility.
+-   **Use `mod.rs` sparingly**: Prefer using the 2018 edition's module system with `foo.rs` and `foo/` directory.
+-   **Re-export for cleaner API**: Use `pub use` in `lib.rs` or a top-level module to create a clean public API.
+
+### 1.3. Naming Conventions
+
+-   **Use `snake_case` for variables, functions, and modules**.
+-   **Use `CamelCase` for types and traits**.
+-   **Use `SCREAMING_SNAKE_CASE` for constants**.
+-   **Be descriptive**: Choose names that clearly convey intent.
+
+### 1.4. Documentation
+
+-   **Document public APIs**: Use `///` doc comments.
+-   **Use examples**: Include `rustdoc` examples that compile.
+-   **Document `unsafe`**: Clearly explain invariants and why `unsafe` is required.
+
+## 2. Idiomatic Rust and Code Quality
+
+### 2.1. Ownership and Borrowing
+
+-   **Prefer borrowing over cloning**: Clone only when necessary.
+-   **Use `&str` instead of `String` for input parameters** when possible.
+-   **Avoid unnecessary allocations**: Use iterators and slices.
+
+### 2.2. Error Handling
+
+-   **Use `Result<T, E>`** for recoverable errors.
+-   **Use `thiserror`** for ergonomic error enums in libraries/binaries.
+-   **Use `anyhow`** for application-level error aggregation (when appropriate).
+-   **Avoid `unwrap()` in production code**: Prefer `?`, `expect()` with message (only when truly unrecoverable), or explicit handling.
+
+### 2.3. Option Handling
+
+-   Prefer combinators (`map`, `and_then`, `ok_or`, `unwrap_or`) where it improves clarity.
+-   Use pattern matching when logic gets complex.
+
+### 2.4. Traits and Generics
+
+-   Prefer trait bounds that communicate intent.
+-   Avoid over-generic code unless it truly reduces duplication.
+
+### 2.5. Clippy and Formatting
+
+-   Run `cargo fmt` and `cargo clippy` regularly.
+-   Treat clippy warnings seriously, but don’t cargo-cult: suppress with justification when needed.
+
+## 3. Performance and Reliability
+
+### 3.1. Avoiding Bottlenecks
+
+-   Profile before optimizing.
+-   Prefer iterators and zero-copy patterns when practical.
+-   Avoid blocking operations on async runtimes.
+
+### 3.2. Async Best Practices (if applicable)
+
+-   Prefer `tokio` (or a single runtime) consistently across the project.
+-   Avoid mixing blocking IO with async tasks; use `spawn_blocking` or dedicated threads.
+
+### 3.3. Memory and Data Structures
+
+-   Choose data structures based on access patterns.
+-   Avoid collecting into `Vec` prematurely; stream where possible.
+
+### 3.4. Logging and Observability
+
+-   Use `tracing` for structured logs when possible.
+-   Avoid logging secrets, PII, or large payloads.
+
+## 4. Security Best Practices
+
+### 4.1. Common Vulnerabilities
+
+-   **Buffer Overflows**: Prevent buffer overflows by using safe indexing methods (e.g., `get()`, `get_mut()`) and validating input sizes.
+-   **SQL Injection**: Prevent SQL injection by using parameterized queries and escaping input.
+-   **Cross-Site Scripting (XSS)**: Sanitize user inputs and use proper output encoding.
+-   **Cross-Site Request Forgery (CSRF)**: Use CSRF tokens and verify requests originate from trusted sources.
+-   **Authentication and Authorization**: Use robust authentication methods and enforce authorization checks on all sensitive operations.
+
+### 4.2. Secure Dependencies
+
+-   Audit dependencies with `cargo audit`.
+-   Keep dependencies updated, but review changelogs for breaking changes.
+
+### 4.3. Handling Sensitive Data
+
+-   Don’t log secrets.
+-   Use OS-provided secure storage where appropriate.
+-   Zeroize sensitive buffers when needed (e.g., `zeroize` crate).
+
+### 4.4. Secure Networking
+
+-   Use TLS for all API communication.
+-   Validate certificates properly to prevent man-in-the-middle attacks.
+-   Use rate limiting to prevent abuse and DoS attacks.
+-   Use API versioning to maintain backward compatibility and allow for future changes.
+-   Thoroughly validate both input to and output from the API.
+-   Use CSP headers to prevent XSS attacks.
+
+### 4.X. Tauri-specific security (desktop IPC + native capabilities)
+Desktop apps don’t get a free security pass. In Tauri, the main risks are **over-broad native permissions** and **unsafe command inputs**.
+
+- **Least privilege via capabilities/permissions**: grant only what the UI truly needs, and scope per window/webview when possible.
+- **Treat every command argument as hostile**: validate types, lengths, and allowed values.
+- **Path traversal defense**: never accept arbitrary filesystem paths from the UI. Prefer a picker token / handle, or enforce a base directory and normalize + check paths.
+- **URL/network defense**: don’t accept arbitrary URLs and fetch them from Rust unless you have explicit allow/deny rules.
+- **Secret handling**: never ship secrets to the frontend; keep them in Rust or OS keychain (where appropriate).
+- **Logging hygiene**: redact tokens/PII; debug logs are a data leak in slow motion.
+
+## 5. Tooling and Workflow
+
+### 5.1. Cargo and Workspaces
+
+-   Use workspaces for multi-crate repos.
+-   Keep feature flags minimal and documented.
+
+### 5.2. CI
+
+-   Run `cargo fmt --check`, `cargo clippy -- -D warnings`, and tests in CI.
+-   Consider `cargo deny` for license/security policies.
+
+### 5.3. Testing
+
+-   Write unit tests for core logic.
+-   Write integration tests for system-level behavior.
+-   Use property testing (`proptest`) when it helps.
+
+## 6. Concurrency and Safety
+
+-   Prefer message passing when shared mutable state gets complicated.
+-   Be explicit about locking order and ownership boundaries.
+-   Avoid deadlocks by keeping critical sections small.
+
+## 7. `unsafe` Guidelines
+
+-   Minimize `unsafe`.
+-   Document invariants clearly.
+-   Prefer safe wrappers around `unsafe` blocks.
+
+## 8. API Design and Maintainability
+
+-   Keep APIs small and predictable.
+-   Favor explicitness over cleverness.
+-   Use semantic versioning for published crates.

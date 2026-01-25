@@ -1,0 +1,145 @@
+---
+description: 
+alwaysApply: true
+---
+
+---
+alwaysApply: true
+---
+
+# Tauri + Vite + TypeScript (Cursor Composer Rules)
+
+These rules are written for a Tauri desktop app whose **frontend is a Vite-powered web UI** (framework-agnostic) and whose **native layer is Rust** (`src-tauri/`). 
+
+## Goals
+- Keep a clean separation between **UI**, **IPC boundary**, and **native capabilities**
+- Prefer **typed, validated** data across boundaries
+- Minimize security surface area (least privilege)
+
+---
+
+## 1) Project Structure (recommended)
+- `src/` (frontend)
+  - `app/` or `pages/` (routing/views, if applicable)
+  - `components/`
+  - `lib/` (pure utilities)
+  - `ipc/` (all Tauri command wrappers + types)
+  - `state/` (store/query caching if used)
+- `src-tauri/` (Rust)
+  - `src/commands/` (Tauri commands only; thin wrappers)
+  - `src/services/` (domain logic; no Tauri imports)
+  - `src/errors.rs` (shared error types)
+  - `src/state.rs` (managed state, if needed)
+
+**Rule:** keep “business logic” out of the command handlers. Commands should validate inputs, call services, and return structured results.
+
+---
+
+## 2) IPC: Invoke, Events, Channels (don’t mix this up)
+### 2.1 `invoke` is IPC, not HTTP
+- Use `invoke()` to call Rust commands from the frontend (IPC).
+- Use `fetch()` for HTTP requests to external services (network).
+- If you need to hide secrets, do privileged networking in Rust and return results via `invoke`.
+
+**Rule:** never describe `invoke` as “HTTP” in docs or code.
+
+### 2.2 Prefer events/channels for streaming data
+- For continuous data (camera frames, logs, progress), prefer:
+  - Events for “push notifications”
+  - Channels (or an event stream pattern) for higher-frequency streams
+
+**Rule:** don’t build “poll loops” in JS unless there’s a strong reason.
+
+### 2.3 IPC modules live in one place
+Create a single IPC wrapper layer in `src/ipc/`:
+- One file per command group (e.g., `ipc/fs.ts`, `ipc/device.ts`)
+- A single `invokeTyped()` helper that enforces runtime validation (below)
+
+---
+
+## 3) Type Safety + Runtime Validation (the boundary is a liar)
+TypeScript interfaces vanish at runtime. Anything coming from:
+- user input
+- filesystem
+- network
+- Rust commands
+
+…should be validated at the boundary.
+
+### 3.1 Recommended approach
+- Use **Zod** (or similar) in the frontend for runtime validation of `invoke()` results and inputs.
+- Rust should use strongly typed structs + `serde` for (de)serialization.
+
+**Rule:** every command wrapper must validate:
+1) inputs before `invoke`
+2) outputs after `invoke` (or validate in Rust and return a verified shape)
+
+---
+
+## 4) Errors: one contract, no “stringly-typed sadness”
+### 4.1 Rust side
+- Use structured error types and map them into a stable wire format:
+  - `{ code: "permission_denied" | "not_found" | ..., message: string, details?: unknown }`
+
+### 4.2 TypeScript side
+- Treat errors as unknown until narrowed/validated.
+- Prefer a discriminated union on `code`.
+
+**Rule:** do not throw raw strings, do not rely on matching `message` text.
+
+---
+
+## 5) Security (Tauri v2 mindset)
+### 5.1 Capabilities/permissions: least privilege
+- Grant only the minimum native permissions required.
+- Scope permissions per window/webview when possible.
+
+**Rule:** if adding a new plugin/API, also update capabilities/permissions and explain why.
+
+### 5.2 Command hardening
+- Validate ALL inputs.
+- Never accept arbitrary filesystem paths from the UI without:
+  - a base-dir allowlist OR
+  - a user-driven picker token OR
+  - strict normalization + checks
+- Do not accept arbitrary URLs and fetch them in Rust without explicit allow/deny rules.
+
+### 5.3 Dev vs production
+- Don’t ship with devtools enabled.
+- Don’t ship with overly permissive logging of secrets.
+- Prefer bundling local assets; remote content increases attack surface.
+
+---
+
+## 6) Performance (desktop reality check)
+- Prefer doing heavy IO/CPU in Rust, but don’t cargo-cult it.
+- UI performance: memoize expensive rendering, virtualize long lists, debounce inputs.
+- Use lazy-loading / code-splitting where it actually helps.
+- Avoid blocking the UI thread with JSON megablobs or synchronous loops.
+
+**Rule:** move work across the boundary only when it reduces latency or simplifies security.
+
+---
+
+## 7) Testing (Vite-native defaults)
+### 7.1 Frontend
+- Prefer **Vitest** for unit/integration tests in Vite projects.
+- Prefer Testing Library for component tests (if using React/Vue/etc).
+
+### 7.2 End-to-end
+- Prefer **Playwright** for E2E (smoke tests + critical flows).
+- Keep E2E tests stable: seed data deterministically, avoid timing sleeps.
+
+### 7.3 Rust
+- Unit test services in `src-tauri/src/services/` without Tauri harness.
+- Keep command handlers thin to avoid needing complex integration harnesses.
+
+---
+
+## 8) Modern frontend hygiene
+- Use `async/await` (no promise pyramids).
+- Prefer small modules with clear responsibilities.
+- Centralize configuration (app name, version, feature flags).
+- Use `import type` for type-only imports.
+
+**Rule:** new code must include clear naming, typed boundaries, and an obvious place to put the next related function.
