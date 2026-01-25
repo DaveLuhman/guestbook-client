@@ -84,55 +84,27 @@ var deviceNameInput = document.getElementById("device_name");
 var deviceLocationInput = document.getElementById("device_location");
 var serverUrlInput = document.getElementById("server_url");
 var errorTextEl = document.getElementById("error-text");
-var validateAndSanitizeUrl = (url) => {
-  const trimmed = url.trim();
+var validateAndSanitizeUrl = (raw) => {
+  const trimmed = raw.trim();
   if (!trimmed) {
     return { isValid: false, error: "Server URL is required" };
   }
-  const dangerousPatterns = [
-    /javascript:/i,
-    /data:/i,
-    /vbscript:/i,
-    /on\w+\s*=/i,
-    // Event handlers like onclick=
-    /<script/i,
-    /<\/script>/i,
-    /<iframe/i,
-    /<object/i,
-    /<embed/i,
-    /eval\(/i,
-    /expression\(/i
-  ];
-  for (const pattern of dangerousPatterns) {
-    if (pattern.test(trimmed)) {
-      return { isValid: false, error: "Invalid URL: contains potentially dangerous content" };
-    }
-  }
-  let parsedUrl;
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+  let parsed;
   try {
-    let urlToParse = trimmed;
-    if (!/^https?:\/\//i.test(trimmed)) {
-      urlToParse = `http://${trimmed}`;
-    }
-    parsedUrl = new URL(urlToParse);
+    parsed = new URL(withProtocol);
   } catch {
     return { isValid: false, error: "Invalid URL format" };
   }
-  const allowedProtocols = ["http:", "https:"];
-  if (!allowedProtocols.includes(parsedUrl.protocol)) {
+  if (!["http:", "https:"].includes(parsed.protocol)) {
     return { isValid: false, error: "Only http:// and https:// URLs are allowed" };
   }
-  let sanitizedUrl;
-  if (/^https?:\/\//i.test(trimmed)) {
-    sanitizedUrl = `${parsedUrl.protocol}//${parsedUrl.host}${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`;
-  } else {
-    sanitizedUrl = `http://${parsedUrl.host}${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`;
-  }
-  if (!parsedUrl.hostname || parsedUrl.hostname.length === 0) {
+  if (!parsed.hostname) {
     return { isValid: false, error: "URL must include a valid hostname" };
   }
-  sanitizedUrl = sanitizedUrl.replace(/\/+$/, "") || sanitizedUrl;
-  return { isValid: true, url: sanitizedUrl };
+  let normalized = parsed.toString();
+  normalized = normalized.replace(/\/+$/, "") || normalized;
+  return { isValid: true, url: normalized };
 };
 var submit = async (e) => {
   e.preventDefault();
@@ -146,16 +118,21 @@ var submit = async (e) => {
     errorTextEl.textContent = "Please fill in all fields";
     return;
   }
-  const urlValidation = validateAndSanitizeUrl(serverUrlRaw);
-  if (!urlValidation.isValid) {
-    errorTextEl.textContent = urlValidation.error || "Invalid server URL";
+  const basicValidation = validateAndSanitizeUrl(serverUrlRaw);
+  if (!basicValidation.isValid || !basicValidation.url) {
+    errorTextEl.textContent = basicValidation.error || "Invalid server URL";
     return;
   }
-  if (!urlValidation.url) {
-    errorTextEl.textContent = "Invalid server URL";
+  let serverUrl;
+  try {
+    serverUrl = await invoke("validate_and_sanitize_url_command", {
+      url: basicValidation.url
+    });
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : "Invalid server URL";
+    errorTextEl.textContent = errorMsg;
     return;
   }
-  const serverUrl = urlValidation.url;
   console.log(deviceName, deviceLocation, serverUrl);
   await invoke("submit_first_run_config", { deviceName, deviceLocation, serverUrl });
   window.close();

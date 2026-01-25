@@ -1,12 +1,12 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { checkSidecarHealth } from '../cameraSidecarClient';
 import { errorHandler } from '../error/errorHandler';
-import { showEntryError, showEntrySuccess } from '../main';
 import { soundManager } from '../sound/soundManager';
+import { showEntryError, showEntrySuccess } from '../ui/entryFeedback';
 import { updateScanData } from './barcodeScanner';
 import { startCameraScanner } from './cameraScanner';
 import { type swipeData, updateSwipeData } from './magstripReader';
-import { checkSidecarHealth } from '../cameraSidecarClient';
 
 // Device status tracking
 interface DeviceStatus {
