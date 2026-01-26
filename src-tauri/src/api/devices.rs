@@ -1,7 +1,6 @@
 use guestbook_client::config::config_manager::ConfigManager;
 use chrono::Utc;
 use serde_json::json;
-use std::process::Command;
 use std::time::Duration;
 use tauri_plugin_http::reqwest; // Add this import for the `json!` macro
 use tokio::time;
