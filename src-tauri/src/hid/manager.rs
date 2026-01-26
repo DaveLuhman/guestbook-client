@@ -396,7 +396,7 @@ impl HIDManager {
     }
 
     #[allow(dead_code)]
-    fn is_barcode_device(vendor_id: u16, product_id: u16) -> bool {
+    pub(crate) fn is_barcode_device(vendor_id: u16, product_id: u16) -> bool {
         // Add more barcode scanner vendor/product IDs as needed
         vendor_id == 0x05e0 || // Symbol/Zebra
         (vendor_id == 0x0acd && product_id == 0x2030) || // Honeywell
@@ -404,11 +404,56 @@ impl HIDManager {
     }
 
     #[allow(dead_code)]
-    fn is_msr_device(vendor_id: u16, product_id: u16) -> bool {
+    pub(crate) fn is_msr_device(vendor_id: u16, product_id: u16) -> bool {
         // Add more MSR reader vendor/product IDs as needed
         vendor_id == 0x0801 || // MagTek
         (vendor_id == 0x0bda && product_id == 0x0161) || // Realtek
         (vendor_id == 0x1a86 && product_id == 0x7523)    // CH340
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::HIDManager;
+
+    #[test]
+    fn is_barcode_device_unit_symbol() {
+        assert!(HIDManager::is_barcode_device(0x05e0, 0));
+    }
+
+    #[test]
+    fn is_barcode_device_unit_honeywell() {
+        assert!(HIDManager::is_barcode_device(0x0acd, 0x2030));
+    }
+
+    #[test]
+    fn is_barcode_device_unit_datalogic() {
+        assert!(HIDManager::is_barcode_device(0x05f9, 0x220a));
+    }
+
+    #[test]
+    fn is_barcode_device_unit_unknown_false() {
+        assert!(!HIDManager::is_barcode_device(0x1234, 0x5678));
+    }
+
+    #[test]
+    fn is_msr_device_unit_magtek() {
+        assert!(HIDManager::is_msr_device(0x0801, 0));
+    }
+
+    #[test]
+    fn is_msr_device_unit_realtek() {
+        assert!(HIDManager::is_msr_device(0x0bda, 0x0161));
+    }
+
+    #[test]
+    fn is_msr_device_unit_ch340() {
+        assert!(HIDManager::is_msr_device(0x1a86, 0x7523));
+    }
+
+    #[test]
+    fn is_msr_device_unit_unknown_false() {
+        assert!(!HIDManager::is_msr_device(0x9999, 0x9999));
     }
 }
 

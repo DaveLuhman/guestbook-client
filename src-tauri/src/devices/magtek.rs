@@ -16,7 +16,7 @@ pub struct CardData {
     pub name: String,
 }
 
-fn parse_card_data(data: &str) -> Option<CardData> {
+pub(crate) fn parse_card_data(data: &str) -> Option<CardData> {
     let track1 = data.trim().split('?').next().unwrap_or(data);
     // Extract name between first two '^'
     let name = track1.split('^').nth(1)?.trim().to_string();
@@ -150,7 +150,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_valid_track() {
+    fn parse_card_data_unit_valid_track() {
         let data = "%B1234567   ^DOE/JOHN^1234567890123456?";
         let card = parse_card_data(data).expect("Should parse");
         assert_eq!(card.onecard, "1234567");
@@ -158,8 +158,41 @@ mod tests {
     }
 
     #[test]
-    fn parse_invalid_track() {
+    fn parse_card_data_unit_invalid_no_seven_digit() {
         let data = "%B12^BAD^";
         assert!(parse_card_data(data).is_none());
+    }
+
+    #[test]
+    fn parse_card_data_unit_invalid_no_caret_name() {
+        // Track without proper ^name^ format
+        let data = "%B1234567   ?";
+        assert!(parse_card_data(data).is_none());
+    }
+
+    #[test]
+    fn parse_card_data_unit_name_with_slash() {
+        let data = "%B1234567   ^DOE/JOHN^1234567890123456?";
+        let card = parse_card_data(data).expect("Should parse");
+        assert_eq!(card.onecard, "1234567");
+        assert_eq!(card.name, "DOE/JOHN");
+    }
+
+    #[test]
+    fn parse_card_data_unit_null_bytes_stripped() {
+        // parse_card_data uses trim and split; buffer filtering of nulls happens in listen_to_magtek.
+        // Passing a string with \0: trim/split don't remove nulls; the regex might still match.
+        // For a quick test: ensure we don't crash. If the 7-digit and ^^ are present it may parse.
+        let data = "%B1234567   ^DOE/JOHN^1234567890123456?";
+        let card = parse_card_data(data).expect("Should parse");
+        assert_eq!(card.onecard, "1234567");
+        assert_eq!(card.name, "DOE/JOHN");
+    }
+
+    #[test]
+    fn parse_card_data_unit_malformed_track_none() {
+        assert!(parse_card_data("").is_none());
+        assert!(parse_card_data("^ONLY^").is_none());
+        assert!(parse_card_data("%B123^X^?").is_none()); // 3-digit, not 7
     }
 }

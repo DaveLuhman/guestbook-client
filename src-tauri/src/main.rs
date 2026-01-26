@@ -1,7 +1,6 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod api;
-mod config;
 mod devices;
 mod hid;
 mod logging;
@@ -10,6 +9,14 @@ mod logging;
 mod debug_logging;
 #[cfg(debug_assertions)]
 mod debug_server;
+
+use guestbook_client::config::config_manager::{
+    get_full_config as get_full_config_impl,
+    set_camera_preview_enabled as set_camera_preview_enabled_impl,
+    ConfigManager,
+};
+use guestbook_client::validation;
+
 use api::devices::{
     register_device,
     send_heartbeat,
@@ -18,7 +25,6 @@ use api::devices::{
     clear_orphaned_state,
     attempt_network_recovery,
 };
-use config::config_manager::{get_full_config, set_camera_preview_enabled, ConfigManager};
 use devices::barcode::{listen_to_barcode, open_symbol_scanner};
 use devices::magtek::{listen_to_magtek, open_magtek_reader};
 use hid::manager::{HIDManager, DeviceConnectionState};
@@ -31,9 +37,6 @@ use std::sync::{Arc, Mutex};
 use std::process::{Command, Child, Stdio};
 use std::path::PathBuf;
 use std::io::{BufRead, BufReader};
-use url::Url;
-use once_cell::sync::Lazy;
-use regex::Regex;
 
 #[tauri::command]
 fn get_hid_devices() -> Vec<String> {
@@ -207,6 +210,19 @@ async fn submit_manual_entry(
 }
 
 #[tauri::command]
+fn get_full_config(config_manager: tauri::State<'_, ConfigManager>) -> Result<guestbook_client::config::config_manager::Config, String> {
+    get_full_config_impl(config_manager)
+}
+
+#[tauri::command]
+fn set_camera_preview_enabled(
+    enabled: bool,
+    config_manager: tauri::State<'_, ConfigManager>,
+) -> Result<(), String> {
+    set_camera_preview_enabled_impl(enabled, config_manager)
+}
+
+#[tauri::command]
 async fn first_run_trigger(app: tauri::AppHandle) {
     let main_window = app.get_webview_window("main").unwrap();
     let first_run_window = app.get_webview_window("firstRun").unwrap();
@@ -215,96 +231,9 @@ async fn first_run_trigger(app: tauri::AppHandle) {
     first_run_window.set_focus().unwrap();
 }
 
-// Compile regex once at startup instead of on every call
-static EVENT_HANDLER_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"on\w+\s*=").expect("valid regex"));
-
-/// Validates and sanitizes a server URL to prevent code injection and ensure it's a valid URL.
-/// Returns the sanitized URL or an error message.
-fn validate_and_sanitize_url(url: &str) -> Result<String, String> {
-    let trimmed = url.trim();
-    if trimmed.is_empty() {
-        return Err("Server URL is required".to_string());
-    }
-
-    // Check for dangerous patterns that could indicate code injection
-    let dangerous_patterns = [
-        "javascript:",
-        "data:",
-        "vbscript:",
-        "<script",
-        "</script>",
-        "<iframe",
-        "<object",
-        "<embed",
-        "eval(",
-        "expression(",
-    ];
-
-    let url_lower = trimmed.to_lowercase();
-    if dangerous_patterns.iter().any(|p| url_lower.contains(p)) {
-        return Err("Invalid URL: contains potentially dangerous content".to_string());
-    }
-
-    if EVENT_HANDLER_RE.is_match(trimmed) {
-        return Err("Invalid URL: contains event handler patterns".to_string());
-    }
-
-    // Add default scheme if missing
-    let url_to_parse = if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
-        format!("http://{}", trimmed)
-    } else {
-        trimmed.to_string()
-    };
-
-    let parsed = Url::parse(&url_to_parse)
-        .map_err(|e| format!("Invalid URL format: {}", e))?;
-
-    match parsed.scheme() {
-        "http" | "https" => {}
-        _ => return Err("Only http:// and https:// URLs are allowed".to_string()),
-    }
-
-    if parsed.host().is_none() {
-        return Err("URL must include a valid hostname".to_string());
-    }
-
-    // Extract all URL components before modifying the URL
-    // Explicitly preserve the port if it was specified in the original URL
-    // The port() method returns Some(port) only if explicitly set (non-default)
-    let port = parsed.port();
-    let scheme = parsed.scheme();
-    let host = parsed.host_str().ok_or_else(|| "Invalid host".to_string())?;
-    let mut path = parsed.path().to_string();
-    let query = parsed.query();
-    let fragment = parsed.fragment();
-
-    // Trim trailing slashes on the path (except root)
-    if path != "/" {
-        path = path.trim_end_matches('/').to_string();
-    }
-
-    // Reconstruct URL with explicit port preservation
-    let mut result = format!("{}://{}", scheme, host);
-    if let Some(port_num) = port {
-        result.push_str(&format!(":{}", port_num));
-    }
-    result.push_str(&path);
-    if let Some(q) = query {
-        result.push('?');
-        result.push_str(q);
-    }
-    if let Some(f) = fragment {
-        result.push('#');
-        result.push_str(f);
-    }
-
-    Ok(result)
-}
-
 #[tauri::command]
 async fn validate_and_sanitize_url_command(url: String) -> Result<String, String> {
-    validate_and_sanitize_url(&url)
+    validation::validate_and_sanitize_url(&url)
 }
 
 #[tauri::command]
@@ -316,7 +245,7 @@ async fn submit_first_run_config(
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     // Validate and sanitize the server URL
-    let sanitized_url = validate_and_sanitize_url(&server_url)?;
+    let sanitized_url = validation::validate_and_sanitize_url(&server_url)?;
 
     let mut config = config_manager.get_config()?;
     config.device_friendly_name = Some(device_name.trim().to_string());

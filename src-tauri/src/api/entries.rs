@@ -1,4 +1,4 @@
-use crate::config::config_manager::ConfigManager;
+use guestbook_client::config::config_manager::ConfigManager;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::json; // Add this import for the `json!` macro

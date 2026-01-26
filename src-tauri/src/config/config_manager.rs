@@ -87,6 +87,20 @@ impl ConfigManager {
         manager
     }
 
+    /// For testing: construct ConfigManager with an explicit path. Does not save on creation.
+    /// Ensures parent directory exists; loads from path if it exists, otherwise uses default merged config.
+    pub fn with_path(path: PathBuf) -> Self {
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let loaded = Self::load_config(&path);
+        let merged = Self::merge_with_default(loaded);
+        Self {
+            config_path: path,
+            config: Arc::new(Mutex::new(merged)),
+        }
+    }
+
     fn resolve_config_path() -> PathBuf {
         // Try to use a platform-specific user data directory, fallback to home
         if let Some(proj_dirs) = directories::ProjectDirs::from("com", "adosoftware", "guestbook") {
@@ -251,9 +265,8 @@ impl ConfigManager {
     }
 }
 
-// Optionally, you can provide a global singleton instance using lazy_static or once_cell
-
-#[tauri::command]
+/// Implementation for the get_full_config Tauri command (command lives in main.rs so
+/// generate_handler! can see the __cmd__ macro).
 pub fn get_full_config(config_manager: State<'_, ConfigManager>) -> Result<Config, String> {
     config_manager.config.lock()
         .map_err(|e: PoisonError<_>| {
@@ -264,7 +277,7 @@ pub fn get_full_config(config_manager: State<'_, ConfigManager>) -> Result<Confi
         .map(|config| config.clone())
 }
 
-#[tauri::command]
+/// Implementation for the set_camera_preview_enabled Tauri command (command lives in main.rs).
 pub fn set_camera_preview_enabled(
     enabled: bool,
     config_manager: State<'_, ConfigManager>,
