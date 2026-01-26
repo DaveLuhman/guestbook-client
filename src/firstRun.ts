@@ -12,7 +12,7 @@ const errorTextEl = document.getElementById('error-text');
  * @param url - The URL string to validate
  * @returns An object with isValid flag and sanitized URL or error message
  */
-const validateAndSanitizeUrl = (
+export const validateAndSanitizeUrl = (
     raw: string,
 ): { isValid: boolean; url?: string; error?: string } => {
     const trimmed = raw.trim();
@@ -20,20 +20,21 @@ const validateAndSanitizeUrl = (
         return { isValid: false, error: 'Server URL is required' };
     }
 
-    // Ensure there is a protocol so URL() will parse it
-    const withProtocol = /^https?:\/\//i.test(trimmed)
-        ? trimmed
-        : `http://${trimmed}`;
-
     let parsed: URL;
     try {
-        parsed = new URL(withProtocol);
+        parsed = new URL(trimmed);
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+            return { isValid: false, error: 'Only http:// and https:// URLs are allowed' };
+        }
     } catch {
-        return { isValid: false, error: 'Invalid URL format' };
-    }
-
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
-        return { isValid: false, error: 'Only http:// and https:// URLs are allowed' };
+        const withProtocol = /^https?:\/\//i.test(trimmed)
+            ? trimmed
+            : `http://${trimmed}`;
+        try {
+            parsed = new URL(withProtocol);
+        } catch {
+            return { isValid: false, error: 'Invalid URL format' };
+        }
     }
 
     if (!parsed.hostname) {
@@ -128,7 +129,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('Submit button clicked');
         submit(e);
     });
-    
+
     console.log('Event listeners attached successfully');
 });
 
